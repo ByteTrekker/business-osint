@@ -109,3 +109,54 @@ def test_shareholder_shares_are_preserved() -> None:
 
 def test_empty_document_does_not_explode() -> None:
     assert parse_krs_document({}).entities == []
+
+
+# --- GLEIF: okresy relacji ------------------------------------------------
+
+
+def test_gleif_uses_relationship_period_not_accounting_period() -> None:
+    """Rok obrotowy w slocie 1 nie może trafić do okresu obowiązywania relacji.
+
+    Wzięcie slotu pierwszego na ślepo sprawiało, że 1006 z 1122 krawędzi
+    właścicielskich wyglądało na zakończone 31 grudnia i znikało z grafu.
+    """
+    from business_osint.etl.sources.gleif_mapper import parse_relationship_row
+
+    row = {
+        "Relationship.StartNode.NodeID": "CHILD00000000000001",
+        "Relationship.EndNode.NodeID": "PARENT0000000000001",
+        "Relationship.RelationshipType": "IS_DIRECTLY_CONSOLIDATED_BY",
+        "Relationship.RelationshipStatus": "ACTIVE",
+        "Relationship.Period.1.startDate": "2021-01-01T01:00:00+01:00",
+        "Relationship.Period.1.endDate": "2021-12-31T01:00:00+01:00",
+        "Relationship.Period.1.periodType": "ACCOUNTING_PERIOD",
+        "Relationship.Period.2.startDate": "2017-12-06T01:00:00+01:00",
+        "Relationship.Period.2.periodType": "RELATIONSHIP_PERIOD",
+    }
+    parsed = parse_relationship_row(row)
+    assert parsed is not None
+    assert parsed.valid_from == dt.date(2017, 12, 6)
+    assert parsed.valid_to is None, "relacja bez daty końca jest wciąż aktualna"
+    # Kierunek: GLEIF mówi „dziecko jest konsolidowane przez rodzica",
+    # my zapisujemy „rodzic jest podmiotem dominującym wobec dziecka".
+    assert parsed.source_key == "lei:PARENT0000000000001"
+    assert parsed.target_key == "lei:CHILD00000000000001"
+
+
+def test_gleif_without_relationship_period_is_treated_as_current() -> None:
+    from business_osint.etl.sources.gleif_mapper import parse_relationship_row
+
+    parsed = parse_relationship_row(
+        {
+            "Relationship.StartNode.NodeID": "A" * 20,
+            "Relationship.EndNode.NodeID": "B" * 20,
+            "Relationship.RelationshipType": "IS_ULTIMATELY_CONSOLIDATED_BY",
+            "Relationship.RelationshipStatus": "ACTIVE",
+            "Relationship.Period.1.startDate": "2024-01-01T00:00:00Z",
+            "Relationship.Period.1.endDate": "2024-12-31T00:00:00Z",
+            "Relationship.Period.1.periodType": "ACCOUNTING_PERIOD",
+        }
+    )
+    assert parsed is not None
+    assert parsed.valid_from is None
+    assert parsed.valid_to is None

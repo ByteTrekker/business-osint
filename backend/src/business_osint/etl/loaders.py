@@ -86,18 +86,21 @@ class EntityResolver:
         pairs = [(scheme.value, value) for scheme, value in identifiers.items() if value]
         if not pairs:
             return None
-        row = (
-            (
-                await self._session.execute(
-                    select(EntityIdentifier.entity_id).where(
-                        text("(scheme, value) IN :pairs").bindparams(pairs=tuple(pairs))
-                    )
+        # Dwie tablice zamiast krotki krotek: asyncpg nie potrafi zbindować
+        # `(scheme, value) IN :pairs` jako pojedynczego parametru.
+        result = await self._session.execute(
+            text(
+                """
+                SELECT entity_id FROM entity_identifiers
+                WHERE (scheme, value) IN (
+                    SELECT * FROM unnest(CAST(:schemes AS text[]), CAST(:values AS text[]))
                 )
-            )
-            .scalars()
-            .first()
+                LIMIT 1
+                """
+            ),
+            {"schemes": [p[0] for p in pairs], "values": [p[1] for p in pairs]},
         )
-        return row
+        return result.scalars().first()
 
     async def _by_blocking_key(self, entity_type: EntityType, key: str) -> uuid.UUID | None:
         return (
@@ -248,12 +251,19 @@ async def load_document(
     *,
     raw_document_id: uuid.UUID,
     close_missing: bool = True,
+    known_keys: dict[str, uuid.UUID] | None = None,
 ) -> LoadStats:
-    """Ładuje sparsowany dokument. Jedna transakcja = jeden spójny stan wiedzy."""
+    """Ładuje sparsowany dokument. Jedna transakcja = jeden spójny stan wiedzy.
+
+    ``known_keys`` pozwala podać klucze lokalne rozwiązane wcześniej, poza tym
+    dokumentem. Potrzebne dla źródeł, które publikują **same krawędzie** —
+    jak plik relacji właścicielskich GLEIF, gdzie obie strony relacji są już
+    w bazie, a dokument nie zawiera żadnych encji.
+    """
     stats = LoadStats()
     resolver = EntityResolver(session)
 
-    key_to_id: dict[str, uuid.UUID] = {}
+    key_to_id: dict[str, uuid.UUID] = dict(known_keys or {})
     for entity in parsed.entities:
         if entity.local_key in key_to_id:
             continue

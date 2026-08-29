@@ -67,6 +67,7 @@ class SourceKind(StrEnum):
     TED = "ted"  # zamówienia publiczne UE
     BZP = "bzp"  # Biuletyn Zamówień Publicznych
     EU_FUNDS = "eu_funds"
+    GLEIF = "gleif"  # globalny rejestr LEI, dane na licencji CC0
     MANUAL = "manual"
     DERIVED = "derived"  # wynik naszego przetwarzania
 
