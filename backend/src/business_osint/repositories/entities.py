@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_osint.domain.normalization import (
@@ -103,12 +104,12 @@ class EntityRepository:
         ]
 
     @staticmethod
-    def _subtitle(row) -> str | None:
+    def _subtitle(row: RowMapping) -> str | None:
         parts = [row.get("krs") and f"KRS {row['krs']}", row.get("nip") and f"NIP {row['nip']}",
                  row.get("city")]
         return " · ".join(p for p in parts if p) or None
 
-    async def get_profile(self, entity_id: uuid.UUID) -> dict | None:
+    async def get_profile(self, entity_id: uuid.UUID) -> dict[str, Any] | None:
         """Profil podmiotu razem z atrybutami typu i licznikiem powiązań."""
         row = (
             await self._session.execute(
@@ -137,7 +138,7 @@ class EntityRepository:
 
     async def relationships(
         self, entity_id: uuid.UUID, *, include_historical: bool = True, limit: int = 200
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Płaska lista powiązań podmiotu wraz z provenance — do zakładki „Powiązania”."""
         rows = (
             await self._session.execute(

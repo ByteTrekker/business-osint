@@ -19,8 +19,9 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import RowMapping, String, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,7 +87,7 @@ _LEVEL_SQL = text(
     """
 ).bindparams(
     bindparam("frontier", type_=ARRAY(PG_UUID(as_uuid=True))),
-    bindparam("rel_types", type_=ARRAY(str)),
+    bindparam("rel_types", type_=ARRAY(String)),
 )
 
 
@@ -112,7 +113,7 @@ class GraphEdge:
     valid_to: dt.date | None
     confidence: str
     is_current: bool
-    attributes: dict
+    attributes: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -227,7 +228,7 @@ class GraphRepository:
         return None if include_derived else _NON_DERIVED_TYPES
 
     @staticmethod
-    def _to_edge(row, as_of: dt.date) -> GraphEdge:
+    def _to_edge(row: RowMapping, as_of: dt.date) -> GraphEdge:
         # Kierunek 'in' oznacza, że wiersz przyszedł z odwróconej połowy widoku —
         # przywracamy oryginalną orientację krawędzi, bo ona niesie znaczenie
         # (osoba -> spółka to nie to samo, co spółka -> osoba).

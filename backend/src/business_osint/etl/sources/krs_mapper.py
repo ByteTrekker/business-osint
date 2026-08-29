@@ -58,7 +58,7 @@ class ParsedDocument:
     relationships: list[ParsedRelationship] = field(default_factory=list)
 
 
-def _get(data: dict, *path: str, default: Any = None) -> Any:
+def _get(data: dict[str, Any], *path: str, default: Any = None) -> Any:
     node: Any = data
     for key in path:
         if not isinstance(node, dict) or key not in node:
@@ -78,7 +78,7 @@ def _parse_date(value: str | None) -> dt.date | None:
     return None
 
 
-def parse_krs_document(payload: dict) -> ParsedDocument:
+def parse_krs_document(payload: dict[str, Any]) -> ParsedDocument:
     """Zamienia odpis KRS na listę encji i relacji gotowych do zapisu."""
     root = _get(payload, "odpis", "dane", default={})
     result = ParsedDocument()
@@ -105,7 +105,7 @@ def parse_krs_document(payload: dict) -> ParsedDocument:
     return result
 
 
-def _parse_company(root: dict) -> ParsedEntity | None:
+def _parse_company(root: dict[str, Any]) -> ParsedEntity | None:
     dane = _get(root, "dzial1", "danePodmiotu", default={})
     name = dane.get("nazwa")
     if not name:
@@ -132,7 +132,7 @@ def _parse_company(root: dict) -> ParsedEntity | None:
     )
 
 
-def _parse_address(root: dict) -> ParsedEntity | None:
+def _parse_address(root: dict[str, Any]) -> ParsedEntity | None:
     adres = _get(root, "dzial1", "siedzibaIAdres", "adres", default={})
     siedziba = _get(root, "dzial1", "siedzibaIAdres", "siedziba", default={})
     city = adres.get("miejscowosc") or siedziba.get("miejscowosc")
@@ -164,7 +164,7 @@ def _parse_address(root: dict) -> ParsedEntity | None:
 
 
 def _parse_people(
-    root: dict, company: ParsedEntity, out: list[ParsedRelationship]
+    root: dict[str, Any], company: ParsedEntity, out: list[ParsedRelationship]
 ) -> list[ParsedEntity]:
     people: list[ParsedEntity] = []
     reprezentacja = _get(root, "dzial2", "reprezentacja", default={}) or {}
@@ -191,7 +191,7 @@ def _parse_people(
 
 
 def _parse_shareholders(
-    root: dict, company: ParsedEntity, out: list[ParsedRelationship]
+    root: dict[str, Any], company: ParsedEntity, out: list[ParsedRelationship]
 ) -> list[ParsedEntity]:
     entities: list[ParsedEntity] = []
     for index, wspolnik in enumerate(_get(root, "dzial1", "wspolnicy", default=[]) or []):
@@ -218,7 +218,7 @@ def _parse_shareholders(
     return entities
 
 
-def _person_from_member(member: dict) -> ParsedEntity | None:
+def _person_from_member(member: dict[str, Any]) -> ParsedEntity | None:
     """Osoba fizyczna albo podmiot (wspólnikiem bywa spółka)."""
     nazwisko = _get(member, "nazwisko", "nazwiskoICzlonPierwszyNazwiskaZlozonego") or member.get(
         "nazwisko"

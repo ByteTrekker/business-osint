@@ -15,8 +15,9 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from dataclasses import dataclass
+from typing import Any, cast
 
-from sqlalchemy import select, text, update
+from sqlalchemy import CursorResult, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -193,7 +194,7 @@ async def store_raw_document(
     url: str | None,
     fetched_at: dt.datetime,
     content_sha256: str,
-    payload: dict,
+    payload: dict[str, Any],
 ) -> tuple[uuid.UUID, bool]:
     """Zapisuje surowy dokument. Zwraca (id, czy_nowy).
 
@@ -348,4 +349,4 @@ async def _close_disappeared(
         )
         .values(valid_to=dt.date.today(), superseded_at=dt.datetime.now(dt.UTC))
     )
-    return result.rowcount or 0
+    return cast(CursorResult[Any], result).rowcount or 0

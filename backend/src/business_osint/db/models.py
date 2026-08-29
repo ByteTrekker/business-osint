@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -218,7 +219,7 @@ class RawDocument(Base):
     url: Mapped[str | None] = mapped_column(Text)
     fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload: Mapped[dict | None] = mapped_column(JSONB)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     storage_uri: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (

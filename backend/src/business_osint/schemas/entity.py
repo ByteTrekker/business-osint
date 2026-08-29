@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -48,7 +49,7 @@ class RelationshipOut(BaseModel):
     valid_from: dt.date | None = None
     valid_to: dt.date | None = None
     confidence: str
-    attributes: dict = Field(default_factory=dict)
+    attributes: dict[str, Any] = Field(default_factory=dict)
     provenance: list[ProvenanceOut] = Field(default_factory=list)
 
 
@@ -58,7 +59,7 @@ class EntityProfileOut(BaseModel):
     name: str
     degree: int
     identifiers: list[IdentifierOut] = Field(default_factory=list)
-    company: dict | None = None
-    person: dict | None = None
-    address: dict | None = None
+    company: dict[str, Any] | None = None
+    person: dict[str, Any] | None = None
+    address: dict[str, Any] | None = None
     updated_at: dt.datetime | None = None

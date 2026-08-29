@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +31,7 @@ async def get_or_create_source(
     return source.id
 
 
-async def ingest_single_krs(krs: str, *, registry: str = "P") -> dict:
+async def ingest_single_krs(krs: str, *, registry: str = "P") -> dict[str, Any]:
     """Pobiera odpis pełny KRS i ładuje go do bazy razem z provenance."""
     client = KrsClient()
     try:
