@@ -10,11 +10,27 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
+import cytoscape, {
+  type Core,
+  type ElementDefinition,
+  type EventObject,
+  type LayoutOptions,
+  type NodeSingular,
+  type SingularElementArgument,
+} from "cytoscape";
 import fcose from "cytoscape-fcose";
 import { api, type GraphResponse } from "@/lib/api";
 
 cytoscape.use(fcose);
+
+/**
+ * fcose jest rozszerzeniem bez typów, więc jego opcje (`animate`, `randomize`)
+ * nie mieszczą się w `LayoutOptions` z @types/cytoscape. Jedno rzutowanie
+ * w jednym miejscu jest uczciwsze niż `as any` przy każdym wywołaniu layoutu.
+ */
+function fcoseLayout(animate: boolean, randomize = true): LayoutOptions {
+  return { name: "fcose", animate, randomize } as unknown as LayoutOptions;
+}
 
 const NODE_COLORS: Record<string, string> = {
   company: "#2563eb",
@@ -58,6 +74,13 @@ function toElements(graph: GraphResponse): ElementDefinition[] {
   return [...nodes, ...edges];
 }
 
+/** Wielkość węzła rośnie logarytmicznie ze stopniem — huby mają być widoczne,
+ *  ale nie mogą zdominować widoku. */
+function nodeSize(el: NodeSingular): number {
+  const degree = (el.data("degree") as number | undefined) ?? 1;
+  return 18 + Math.min(22, Math.log2(degree + 1) * 4);
+}
+
 interface Props {
   rootId: string;
   depth?: number;
@@ -82,15 +105,16 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
         {
           selector: "node",
           style: {
-            "background-color": (el) => NODE_COLORS[el.data("type")] ?? NODE_COLORS.other,
+            "background-color": (el: NodeSingular) =>
+              NODE_COLORS[el.data("type") as string] ?? NODE_COLORS.other,
             label: "data(label)",
             "font-size": "10px",
             "text-wrap": "ellipsis",
             "text-max-width": "120px",
             "text-valign": "bottom",
             "text-margin-y": 4,
-            width: (el) => 18 + Math.min(22, Math.log2((el.data("degree") ?? 1) + 1) * 4),
-            height: (el) => 18 + Math.min(22, Math.log2((el.data("degree") ?? 1) + 1) * 4),
+            width: (el: NodeSingular) => nodeSize(el),
+            height: (el: NodeSingular) => nodeSize(el),
           },
         },
         {
@@ -116,12 +140,12 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
         // Powiązanie zakończone rysujemy przerywaną linią — „było, minęło”.
         { selector: "edge[!current]", style: { "line-style": "dashed", opacity: 0.55 } },
       ],
-      layout: { name: "fcose", animate: false },
+      layout: fcoseLayout(false),
       wheelSensitivity: 0.2,
     });
     cyRef.current = cy;
 
-    cy.on("tap", "node", (event) => {
+    cy.on("tap", "node", (event: EventObject) => {
       const id = event.target.id() as string;
       onSelect?.(id);
       void expand(id);
@@ -130,11 +154,13 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
     async function expand(entityId: string) {
       try {
         const neighbourhood = await api.graph(entityId, 1);
-        const existing = new Set(cy.elements().map((el) => el.id()));
+        const existing = new Set(
+          cy.elements().map((el: SingularElementArgument) => el.id()),
+        );
         const fresh = toElements(neighbourhood).filter((el) => !existing.has(el.data.id as string));
         if (fresh.length === 0) return;
         cy.add(fresh);
-        cy.layout({ name: "fcose", animate: true, randomize: false }).run();
+        cy.layout(fcoseLayout(true, false)).run();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Nie udało się rozwinąć węzła");
       }
@@ -144,7 +170,7 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
       .graph(rootId, depth)
       .then((graph) => {
         cy.add(toElements(graph));
-        cy.layout({ name: "fcose", animate: false }).run();
+        cy.layout(fcoseLayout(false)).run();
         setMeta(graph.meta);
       })
       .catch((cause: unknown) =>

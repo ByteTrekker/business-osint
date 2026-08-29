@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     environment: str = "local"
     debug: bool = False
 
-    database_url: PostgresDsn = Field(
-        default="postgresql+asyncpg://osint:osint@localhost:5432/osint"  # type: ignore[arg-type]
+    database_url: PostgresDsn = Field(  # type: ignore[assignment]
+        default="postgresql+asyncpg://osint:osint@localhost:5432/osint"
     )
     db_pool_size: int = 10
     db_max_overflow: int = 20

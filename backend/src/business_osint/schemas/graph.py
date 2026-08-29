@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +30,7 @@ class EdgeOut(BaseModel):
     valid_to: dt.date | None = None
     current: bool
     confidence: str
-    attributes: dict = Field(default_factory=dict)
+    attributes: dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphMeta(BaseModel):

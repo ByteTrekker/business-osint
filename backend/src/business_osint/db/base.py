@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -28,7 +28,7 @@ utc_now = Annotated[
     dt.datetime,
     mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False),
 ]
-json_col = Annotated[dict, mapped_column(JSONB, server_default="{}", nullable=False)]
+json_col = Annotated[dict[str, Any], mapped_column(JSONB, server_default="{}", nullable=False)]
 
 
 class Base(DeclarativeBase):

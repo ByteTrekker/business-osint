@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from typing import Any, cast
+
+from sqlalchemy import CursorResult, text
 
 from business_osint.db.session import get_sessionmaker
 
@@ -31,4 +33,4 @@ _RECOMPUTE_DEGREES = text(
 async def recompute_degrees() -> int:
     async with get_sessionmaker()() as session, session.begin():
         result = await session.execute(_RECOMPUTE_DEGREES)
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0

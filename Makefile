@@ -28,8 +28,14 @@ test: ## Testy jednostkowe (bez bazy)
 test-integration: ## Testy integracyjne (wymagają Postgresa)
 	$(COMPOSE) exec api pytest tests -m integration -q
 
-lint: ## Ruff + mypy
-	cd backend && .venv/bin/ruff check src tests && .venv/bin/ruff format --check src tests
+lint: ## Ruff
+	cd backend && .venv/bin/ruff check src tests
+
+typecheck: ## mypy (backend, strict) + tsc (frontend)
+	cd backend && .venv/bin/mypy src
+	cd frontend && npx tsc --noEmit
+
+check: lint typecheck test ## Wszystko, co sprawdza CI przed pushem
 
 psql: ## Konsola SQL
 	$(COMPOSE) exec db psql -U osint -d osint
@@ -38,4 +44,4 @@ bench: ## Generuje syntetyczny graf i mierzy czas zapytań
 	$(COMPOSE) exec api python -m business_osint.cli seed && \
 	$(COMPOSE) exec db psql -U osint -d osint -f /dev/stdin < ops/bench.sql
 
-.PHONY: help up down logs migrate revision seed test test-integration lint psql bench
+.PHONY: help up down logs migrate revision seed test test-integration lint typecheck check psql bench

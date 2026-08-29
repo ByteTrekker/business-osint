@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -173,7 +174,7 @@ async def _build(session: AsyncSession) -> None:
         role: str | None = None,
         valid_from: dt.date | None = None,
         valid_to: dt.date | None = None,
-        attributes: dict | None = None,
+        attributes: dict[str, Any] | None = None,
     ) -> None:
         edges.append(
             Relationship(

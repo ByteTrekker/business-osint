@@ -21,8 +21,16 @@ make seed               # dane demonstracyjne, działa bez dostępu do rejestró
 make test               # testy jednostkowe, bez bazy, ~0.2 s
 make test-integration   # testy z Postgresem
 make lint               # ruff
+make typecheck          # mypy strict (backend) + tsc (frontend)
+make check              # lint + typecheck + testy — to, co sprawdza CI
 make psql               # konsola SQL
 ```
+
+**Przed pushem uruchom `make check`.** `mypy` jest w trybie strict, a frontend ma
+`tsc --noEmit` w CI — sam `pytest` i `ruff` tego nie wyłapią. Typowe pułapki,
+które już raz przeszły przez lokalne testy i wywróciły CI:
+`dict` bez parametrów typu (`disallow_any_generics`), `Result.rowcount`
+(trzeba `cast(CursorResult[Any], ...)`), oraz nietypowane callbacki Cytoscape.
 
 Backend ma lokalny venv w `backend/.venv` (poza gitem):
 

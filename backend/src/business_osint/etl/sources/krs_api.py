@@ -20,6 +20,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -34,11 +35,11 @@ class FetchedDocument:
     external_id: str
     url: str
     fetched_at: datetime
-    payload: dict
+    payload: dict[str, Any]
     content_sha256: str
 
     @classmethod
-    def build(cls, external_id: str, url: str, payload: dict) -> FetchedDocument:
+    def build(cls, external_id: str, url: str, payload: dict[str, Any]) -> FetchedDocument:
         canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return cls(
             external_id=external_id,
