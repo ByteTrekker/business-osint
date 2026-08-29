@@ -100,6 +100,12 @@ jobs:
           BUSINESS_OSINT_TEST_DATABASE_URL: postgresql+asyncpg://osint:osint@localhost:5432/osint_test
         run: pytest tests/integration -q -m integration
 
+      # Sprawdza, czy testy faktycznie wykrywają zmiany w regułach domenowych.
+      # Pokrycie mówi, że linia się wykonała; mutacja — że jej zmiana coś psuje.
+      - name: Testy mutacyjne warstwy domenowej
+        working-directory: backend
+        run: ../scripts/check-mutation.sh
+
       # --- bezpieczeństwo zależności ---
       - name: Audyt zależności
         working-directory: backend

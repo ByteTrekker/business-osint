@@ -1,0 +1,17 @@
+# Mutanty równoważne — zmieniają kod, ale nie jego zachowanie.
+# Nie da się ich zabić testem, bo nie istnieje wejście, dla którego wynik się różni.
+# Każdy wpis wymaga uzasadnienia. Wpis bez uzasadnienia to ukryta luka w testach.
+#
+# Format: <pełna nazwa mutanta>
+
+# split(" ") -> split(None): funkcja najpierw zwija białe znaki przez _WS_RE,
+# więc po normalizacji oba warianty dzielą identycznie.
+business_osint.domain.normalization.x_split_person_name__mutmut_14
+
+# To samo w kluczu blokującym: normalize_person_name zwija białe znaki,
+# a strażnik first_names.strip() wyklucza wejście złożone z samych spacji.
+business_osint.domain.normalization.x_person_blocking_key__mutmut_2
+
+# `not a or not b` -> `not a and not b`: gdy dokładnie jeden argument jest pusty,
+# mutant przechodzi do SequenceMatcher, który dla pustego napisu i tak zwraca 0.0.
+business_osint.domain.identity.x_string_similarity__mutmut_1

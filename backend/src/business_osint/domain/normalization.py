@@ -120,7 +120,14 @@ def person_blocking_key(first_names: str, last_name: str, birth_year: int | None
 
 
 def _checksum(digits: str, weights: tuple[int, ...], modulo: int) -> int:
-    return sum(int(d) * w for d, w in zip(digits, weights, strict=False)) % modulo
+    """Suma kontrolna wg wag rejestru.
+
+    ``strict=True`` celowo: przy ``strict=False`` zły wycinek cyfr (np. ``[:10]``
+    zamiast ``[:9]``) byłby po cichu ucinany do długości wag i dawał poprawny
+    wynik mimo błędu. Testy mutacyjne pokazały, że taka pomyłka przechodzi
+    niezauważona — teraz kończy się wyjątkiem.
+    """
+    return sum(int(d) * w for d, w in zip(digits, weights, strict=True)) % modulo
 
 
 def is_valid_nip(value: str) -> bool:
@@ -129,7 +136,10 @@ def is_valid_nip(value: str) -> bool:
     if len(digits) != 10 or digits == "0" * 10:
         return False
     control = _checksum(digits[:9], (6, 5, 7, 2, 3, 4, 5, 6, 7), 11)
-    return control != 10 and control == int(digits[9])
+    # Reszta 10 nie ma reprezentacji jako cyfra kontrolna, więc taki prefiks
+    # nigdy nie utworzy poprawnego NIP-u — porównanie z cyfrą (0-9) załatwia to
+    # samo, co jawny strażnik `control != 10`, który był martwym kodem.
+    return control == int(digits[9])
 
 
 def is_valid_regon(value: str) -> bool:

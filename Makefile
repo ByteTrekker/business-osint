@@ -44,6 +44,9 @@ coverage: ## Testy jednostkowe z progiem pokrycia warstwy domenowej
 	cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/unit -q \
 		--cov=business_osint.domain --cov-report=term-missing --cov-fail-under=90
 
+mutation: ## Testy mutacyjne warstwy domenowej
+	cd backend && MUTMUT_BIN=.venv/bin/mutmut ../scripts/check-mutation.sh
+
 audit: ## Podatności w zależnościach
 	cd backend && .venv/bin/pip-audit --skip-editable
 	cd frontend && npm audit --audit-level=high
@@ -54,7 +57,7 @@ migration-check: ## Czy modele SQLAlchemy zgadzają się z migracjami
 commits: ## Konwencja commitów w bieżącej gałęzi
 	./scripts/check-commits.sh
 
-check: lint typecheck coverage commits ## Bramki CI możliwe do uruchomienia bez bazy
+check: lint typecheck coverage mutation commits ## Bramki CI możliwe do uruchomienia bez bazy
 
 psql: ## Konsola SQL
 	$(COMPOSE) exec db psql -U osint -d osint
@@ -64,4 +67,4 @@ bench: ## Generuje syntetyczny graf i mierzy czas zapytań
 	$(COMPOSE) exec db psql -U osint -d osint -f /dev/stdin < ops/bench.sql
 
 .PHONY: help up down logs migrate revision seed test test-integration lint format \
-        typecheck coverage audit migration-check commits check psql bench
+        typecheck coverage mutation audit migration-check commits check psql bench

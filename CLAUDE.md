@@ -24,6 +24,7 @@ make lint               # ruff + eslint + prettier
 make format             # automatyczne formatowanie
 make typecheck          # mypy strict (backend) + tsc (frontend)
 make coverage           # testy z progiem pokrycia domain/ (90%)
+make mutation           # testy mutacyjne warstwy domenowej
 make audit              # pip-audit + npm audit
 make commits            # konwencja Conventional Commits
 make check              # wszystko, co da się sprawdzić bez bazy
@@ -116,6 +117,11 @@ zmiana architektoniczna wymagająca ADR, a nie zwykły commit.
   po stronie urzędu ma dawać czerwony test, nie ciche pustoszenie grafu.
 * Testy jednostkowe nie dotykają sieci ani bazy. Bez wyjątków.
 * Nowa reguła domenowa bez testu nie wchodzi.
+* **Warstwa `domain/` jest objęta testami mutacyjnymi** (`make mutation`).
+  Nowa reguła musi mieć test, który wykrywa jej zmianę, a nie tylko wykonuje
+  linię. Jeżeli mutant przeżyje, dopisz test; dopisanie go do
+  `backend/tests/mutation-allowlist.txt` jest dopuszczalne wyłącznie wtedy, gdy
+  potrafisz uzasadnić, że **nie istnieje wejście** dające inny wynik.
 
 ## Czego nie proponować
 
