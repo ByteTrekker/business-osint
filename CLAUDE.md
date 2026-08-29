@@ -70,6 +70,7 @@ backend/src/business_osint/
   api/v1/        warstwa HTTP, cienka: walidacja + mapowanie na schematy
   schemas/       kontrakty pydantic (wejście/wyjście API)
   etl/           klienci rejestrów, mappery, loadery
+  etl/fetching/  odporność pobierania: retry, limit tempa, bezpiecznik, profile źródeł
 backend/tests/unit/         bez bazy — muszą działać wszędzie
 backend/tests/integration/  z Postgresem, oznaczone @pytest.mark.integration
 frontend/src/               Next.js App Router + Cytoscape.js
@@ -222,6 +223,35 @@ o scaleniu na podstawie tego, co uznaje za zweryfikowane.
 
 PR pozostaje w stanie **draft** dopóki istnieje znany, nierozwiązany warunek
 blokujący — i ten warunek ma być wymieniony w opisie z nazwy.
+
+## Pobieranie danych
+
+Cała odporność siedzi w `etl/fetching/` — nowy klient rejestru **nie pisze
+własnego retry**, tylko korzysta z `ResilientClient` i dopisuje profil do
+`etl/fetching/profiles.py`.
+
+Reguły:
+
+* Warstwa pobierania nie wypuszcza wyjątków `httpx` ani `asyncio` — wyłącznie
+  podklasy `FetchError`. Job ingestujący reaguje na kategorię błędu, nie na
+  bibliotekę.
+* 404 i 4xx **nie są ponawiane** i nie obciążają bezpiecznika: rejestr działa
+  poprawnie, błąd jest po naszej stronie albo zasób nie istnieje.
+* Pojedyncze nieudane zadanie nigdy nie przerywa przebiegu — wraca do kolejki
+  `ingestion_tasks` z backoffem, a po wyczerpaniu prób zostaje jako `failed`
+  z treścią błędu.
+* Nowe źródło = wpis w `PROFILES`, nie nowa klasa z własnym pomysłem na tempo.
+* Testy warstwy pobierania nie dotykają sieci: `httpx.MockTransport` plus
+  wstrzyknięty zegar i `sleep`.
+
+Pułapka, która już raz kosztowała debugowanie: **SQLAlchemy `text()` parsuje
+parametry także w komentarzach SQL** — `-- CAST(:x AS interval)` tworzy
+niezwiązany parametr `x`. I `timedelta(0)` jest falsy, więc
+`retry_in or default` cicho zamienia natychmiastowe ponowienie w domyślne
+opóźnienie.
+
+Szacunki kosztu i przyrostowości źródeł:
+[docs/07-pobieranie-danych.md](docs/07-pobieranie-danych.md).
 
 ## Dane osobowe
 

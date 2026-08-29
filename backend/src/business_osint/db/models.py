@@ -32,6 +32,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -372,6 +373,61 @@ class EntityMerge(Base):
     reverted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (Index("ix_entity_merges_merged_id", "merged_id"),)
+
+
+class IngestionTask(Base):
+    """Jednostka pracy pobierania — wznawialna i idempotentna.
+
+    Kolejka leży w Postgresie, a nie w Redisie, z dwóch powodów: nie dokłada
+    infrastruktury na MVP i jest w tej samej transakcji, co zapis wyniku, więc
+    zadanie nie może zniknąć między pobraniem a zapisem.
+
+    To także granica G1 z ADR-0005: crawler w innym języku potrzebuje wyłącznie
+    tej tabeli i ``raw_documents`` — żadnego wspólnego kodu z API.
+    """
+
+    __tablename__ = "ingestion_tasks"
+
+    id: Mapped[uuid_pk]
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Identyfikator w systemie źródłowym (numer KRS, NIP, data paczki).
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: Rodzaj pracy, np. "odpis_pelny" albo "odpis_aktualny".
+    task_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    #: Wyższa wartość = pilniejsze. Spółki z ruchem odświeżamy częściej.
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    #: Backoff między przebiegami: zadanie nie wraca do puli przed tym czasem.
+    scheduled_for: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    locked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_by: Mapped[str | None] = mapped_column(String(64))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[utc_now]
+    updated_at: Mapped[utc_now]
+
+    __table_args__ = (
+        # Ponowne zakolejkowanie tego samego podmiotu nie tworzy duplikatu.
+        UniqueConstraint(
+            "source_id", "external_id", "task_type", name="uq_ingestion_tasks_identity"
+        ),
+        CheckConstraint(
+            "status IN ('pending','running','done','failed','skipped')",
+            name="status_valid",
+        ),
+        # Indeks pobierania partii: tylko zadania czekające, w kolejności priorytetu.
+        Index(
+            "ix_ingestion_tasks_queue",
+            "source_id",
+            text("priority DESC"),
+            "scheduled_for",
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
 
 
 class IngestionRun(Base):

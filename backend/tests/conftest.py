@@ -54,9 +54,16 @@ async def db_session() -> AsyncIterator:
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
+        session.info["engine"] = engine
         yield session
 
     async with engine.begin() as connection:
         await connection.exec_driver_sql("DROP VIEW IF EXISTS graph_edges")
         await connection.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_engine(db_session):
+    """Silnik tej samej bazy — potrzebny tam, gdzie test wymaga dwóch połączeń."""
+    return db_session.info["engine"]
