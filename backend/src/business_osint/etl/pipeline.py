@@ -21,8 +21,10 @@ async def get_or_create_source(
     session: AsyncSession, kind: SourceKind, name: str, base_url: str | None = None
 ) -> uuid.UUID:
     existing = (
-        await session.execute(select(Source.id).where(Source.kind == kind, Source.name == name))
-    ).scalars().first()
+        (await session.execute(select(Source.id).where(Source.kind == kind, Source.name == name)))
+        .scalars()
+        .first()
+    )
     if existing:
         return existing
     source = Source(id=uuid.uuid4(), kind=kind, name=name, base_url=base_url)

@@ -173,17 +173,21 @@ class GraphRepository:
             if not frontier or state.remaining_nodes <= 0:
                 break
             rows = (
-                await self._session.execute(
-                    _LEVEL_SQL,
-                    {
-                        "frontier": frontier,
-                        "as_of": as_of,
-                        "include_historical": include_historical,
-                        "rel_types": rel_types,
-                        "fanout": budget.fanout_per_node,
-                    },
+                (
+                    await self._session.execute(
+                        _LEVEL_SQL,
+                        {
+                            "frontier": frontier,
+                            "as_of": as_of,
+                            "include_historical": include_historical,
+                            "rel_types": rel_types,
+                            "fanout": budget.fanout_per_node,
+                        },
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
             next_frontier: list[uuid.UUID] = []
             for row in rows:
@@ -252,16 +256,20 @@ class GraphRepository:
 
     async def _load_root(self, root_id: uuid.UUID) -> GraphNode | None:
         row = (
-            await self._session.execute(
-                text(
-                    """
+            (
+                await self._session.execute(
+                    text(
+                        """
                     SELECT id, entity_type, display_name, degree, merged_into_id
                     FROM entities WHERE id = :id
                     """
-                ),
-                {"id": root_id},
+                    ),
+                    {"id": root_id},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if row is None:
             return None
         return GraphNode(

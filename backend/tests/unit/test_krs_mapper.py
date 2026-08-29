@@ -96,9 +96,7 @@ def test_address_becomes_its_own_node() -> None:
     parsed = parse_krs_document(ODPIS)
     address = next(e for e in parsed.entities if e.entity_type is EntityType.ADDRESS)
     assert "100" in address.display_name
-    assert any(
-        r.relationship_type is RelationshipType.REGISTERED_AT for r in parsed.relationships
-    )
+    assert any(r.relationship_type is RelationshipType.REGISTERED_AT for r in parsed.relationships)
 
 
 def test_shareholder_shares_are_preserved() -> None:

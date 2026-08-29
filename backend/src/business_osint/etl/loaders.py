@@ -87,24 +87,32 @@ class EntityResolver:
         if not pairs:
             return None
         row = (
-            await self._session.execute(
-                select(EntityIdentifier.entity_id).where(
-                    text("(scheme, value) IN :pairs").bindparams(pairs=tuple(pairs))
+            (
+                await self._session.execute(
+                    select(EntityIdentifier.entity_id).where(
+                        text("(scheme, value) IN :pairs").bindparams(pairs=tuple(pairs))
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         return row
 
     async def _by_blocking_key(self, entity_type: EntityType, key: str) -> uuid.UUID | None:
         return (
-            await self._session.execute(
-                select(Entity.id).where(
-                    Entity.entity_type == entity_type,
-                    Entity.blocking_key == key,
-                    Entity.merged_into_id.is_(None),
+            (
+                await self._session.execute(
+                    select(Entity.id).where(
+                        Entity.entity_type == entity_type,
+                        Entity.blocking_key == key,
+                        Entity.merged_into_id.is_(None),
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
 
     async def _attach_identifiers(
         self, entity_id: uuid.UUID, identifiers: dict[IdentifierScheme, str]
@@ -219,14 +227,18 @@ async def store_raw_document(
     if inserted:
         return inserted, True
     existing = (
-        await session.execute(
-            select(RawDocument.id).where(
-                RawDocument.source_id == source_id,
-                RawDocument.external_id == external_id,
-                RawDocument.content_sha256 == content_sha256,
+        (
+            await session.execute(
+                select(RawDocument.id).where(
+                    RawDocument.source_id == source_id,
+                    RawDocument.external_id == external_id,
+                    RawDocument.content_sha256 == content_sha256,
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     return existing, False
 
 
@@ -255,9 +267,7 @@ async def load_document(
 
     seen_relationship_ids: set[uuid.UUID] = set()
     root_ids = {
-        key_to_id[e.local_key]
-        for e in parsed.entities
-        if e.entity_type == EntityType.COMPANY
+        key_to_id[e.local_key] for e in parsed.entities if e.entity_type == EntityType.COMPANY
     }
 
     for rel in parsed.relationships:
@@ -294,16 +304,20 @@ async def _upsert_relationship(
     stats: LoadStats,
 ) -> uuid.UUID:
     existing = (
-        await session.execute(
-            select(Relationship).where(
-                Relationship.source_entity_id == source_id,
-                Relationship.target_entity_id == target_id,
-                Relationship.relationship_type == rel.relationship_type,
-                Relationship.valid_from.is_not_distinct_from(rel.valid_from),
-                Relationship.superseded_at.is_(None),
+        (
+            await session.execute(
+                select(Relationship).where(
+                    Relationship.source_entity_id == source_id,
+                    Relationship.target_entity_id == target_id,
+                    Relationship.relationship_type == rel.relationship_type,
+                    Relationship.valid_from.is_not_distinct_from(rel.valid_from),
+                    Relationship.superseded_at.is_(None),
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if existing is not None:
         # Zmiana daty zakończenia to nowy fakt: zamykamy stary wiersz i piszemy nowy.

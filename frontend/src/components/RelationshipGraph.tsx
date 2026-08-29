@@ -122,7 +122,10 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
           selector: "node[!expandable]",
           style: { "border-width": 3, "border-color": "#dc2626", "border-style": "dashed" },
         },
-        { selector: `node[id = "${rootId}"]`, style: { "border-width": 4, "border-color": "#0f172a" } },
+        {
+          selector: `node[id = "${rootId}"]`,
+          style: { "border-width": 4, "border-color": "#0f172a" },
+        },
         {
           selector: "edge",
           style: {
@@ -154,9 +157,7 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
     async function expand(entityId: string) {
       try {
         const neighbourhood = await api.graph(entityId, 1);
-        const existing = new Set(
-          cy.elements().map((el: SingularElementArgument) => el.id()),
-        );
+        const existing = new Set(cy.elements().map((el: SingularElementArgument) => el.id()));
         const fresh = toElements(neighbourhood).filter((el) => !existing.has(el.data.id as string));
         if (fresh.length === 0) return;
         cy.add(fresh);

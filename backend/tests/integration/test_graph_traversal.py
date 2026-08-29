@@ -90,8 +90,12 @@ async def test_historical_edges_are_hidden_by_default(db_session) -> None:
     firma = await _company(db_session, "GAMMA")
     osoba = await _person(db_session, "Anna Nowak")
     await _edge(
-        db_session, osoba, firma, RelationshipType.BOARD_MEMBER_OF,
-        dt.date(2020, 1, 1), dt.date(2023, 6, 30),
+        db_session,
+        osoba,
+        firma,
+        RelationshipType.BOARD_MEMBER_OF,
+        dt.date(2020, 1, 1),
+        dt.date(2023, 6, 30),
     )
     repo = GraphRepository(db_session)
 
@@ -109,8 +113,12 @@ async def test_as_of_returns_state_from_the_past(db_session) -> None:
     firma = await _company(db_session, "DELTA")
     osoba = await _person(db_session, "Piotr Zieliński")
     await _edge(
-        db_session, osoba, firma, RelationshipType.BOARD_MEMBER_OF,
-        dt.date(2020, 1, 1), dt.date(2023, 6, 30),
+        db_session,
+        osoba,
+        firma,
+        RelationshipType.BOARD_MEMBER_OF,
+        dt.date(2020, 1, 1),
+        dt.date(2023, 6, 30),
     )
     result = await GraphRepository(db_session).neighborhood(
         firma, budget=GraphBudget(), depth=1, as_of=dt.date(2022, 1, 1)

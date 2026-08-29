@@ -15,8 +15,8 @@ export default async function HomePage({
     <>
       <h1>Kto stoi za tą firmą?</h1>
       <p className="lead">
-        Wyszukaj po nazwie, NIP, KRS lub REGON, a następnie klikaj kolejne węzły grafu,
-        żeby prześledzić powiązania osobowe i kapitałowe.
+        Wyszukaj po nazwie, NIP, KRS lub REGON, a następnie klikaj kolejne węzły grafu, żeby
+        prześledzić powiązania osobowe i kapitałowe.
       </p>
 
       <form action="/" method="get" className="search">

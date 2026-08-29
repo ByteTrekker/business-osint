@@ -38,7 +38,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.CheckConstraint(
             "entity_type IN ('company','person','address','foreign_entity','other')",
-            name="ck_entities_entity_type_valid",
+            name="entity_type_valid",
         ),
     )
     op.create_index("ix_entities_type_normalized_name", "entities", ["entity_type", "normalized_name"])
@@ -169,16 +169,16 @@ def upgrade() -> None:
         sa.Column("confidence", sa.String(16), nullable=False, server_default="registered"),
         sa.Column("confidence_score", sa.Numeric(3, 2), nullable=False, server_default="1.0"),
         sa.Column("attributes", JSONB, server_default="{}", nullable=False),
-        sa.CheckConstraint("source_entity_id <> target_entity_id", name="ck_relationships_no_self_loop"),
+        sa.CheckConstraint("source_entity_id <> target_entity_id", name="no_self_loop"),
         sa.CheckConstraint(
             "valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",
-            name="ck_relationships_valid_period",
+            name="valid_period",
         ),
     )
     # Klucz naturalny aktywnej krawędzi — gwarantuje idempotencję ponownego importu.
     op.execute(
         "CREATE UNIQUE INDEX uq_relationships_active ON relationships "
-        "(source_entity_id, target_entity_id, relationship_type, COALESCE(valid_from, 'epoch'::date)) "
+        "(source_entity_id, target_entity_id, relationship_type, COALESCE(valid_from, '1970-01-01'::date)) "
         "WHERE superseded_at IS NULL"
     )
     # Dwa indeksy = traversal w obie strony po jednym index scanie.

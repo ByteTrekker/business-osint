@@ -39,7 +39,9 @@ _SEARCH_SQL = text(
         SELECT e.id, e.entity_type, e.display_name, e.degree, 1.0::float8 AS score
         FROM entity_identifiers i
         JOIN entities e ON e.id = i.entity_id AND e.merged_into_id IS NULL
-        WHERE :identifier IS NOT NULL AND i.value = :identifier
+        -- Jawne CAST-y: asyncpg nie wywnioskuje typu parametru, ktory wystepuje
+        -- wylacznie w porownaniu z NULL (AmbiguousParameterError).
+        WHERE CAST(:identifier AS text) IS NOT NULL AND i.value = CAST(:identifier AS text)
     ),
     by_name AS (
         SELECT e.id, e.entity_type, e.display_name, e.degree,
@@ -47,7 +49,7 @@ _SEARCH_SQL = text(
         FROM entities e
         WHERE e.merged_into_id IS NULL
           AND e.normalized_name % :normalized  -- operator pg_trgm, korzysta z indeksu GIN
-          AND (:entity_type IS NULL OR e.entity_type = :entity_type)
+          AND (CAST(:entity_type AS text) IS NULL OR e.entity_type = CAST(:entity_type AS text))
         ORDER BY score DESC, e.degree DESC
         LIMIT :limit
     ),
@@ -81,16 +83,20 @@ class EntityRepository:
             else None
         )
         rows = (
-            await self._session.execute(
-                _SEARCH_SQL,
-                {
-                    "identifier": identifier,
-                    "normalized": normalize_company_name(cleaned) or cleaned.lower(),
-                    "entity_type": entity_type,
-                    "limit": limit,
-                },
+            (
+                await self._session.execute(
+                    _SEARCH_SQL,
+                    {
+                        "identifier": identifier,
+                        "normalized": normalize_company_name(cleaned) or cleaned.lower(),
+                        "entity_type": entity_type,
+                        "limit": limit,
+                    },
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         return [
             SearchHit(
                 id=row["id"],
@@ -105,16 +111,20 @@ class EntityRepository:
 
     @staticmethod
     def _subtitle(row: RowMapping) -> str | None:
-        parts = [row.get("krs") and f"KRS {row['krs']}", row.get("nip") and f"NIP {row['nip']}",
-                 row.get("city")]
+        parts = [
+            row.get("krs") and f"KRS {row['krs']}",
+            row.get("nip") and f"NIP {row['nip']}",
+            row.get("city"),
+        ]
         return " · ".join(p for p in parts if p) or None
 
     async def get_profile(self, entity_id: uuid.UUID) -> dict[str, Any] | None:
         """Profil podmiotu razem z atrybutami typu i licznikiem powiązań."""
         row = (
-            await self._session.execute(
-                text(
-                    """
+            (
+                await self._session.execute(
+                    text(
+                        """
                     SELECT
                         e.id, e.entity_type, e.display_name, e.degree, e.merged_into_id,
                         e.created_at, e.updated_at,
@@ -130,10 +140,13 @@ class EntityRepository:
                     LEFT JOIN addresses a ON a.entity_id = e.id
                     WHERE e.id = :id
                     """
-                ),
-                {"id": entity_id},
+                    ),
+                    {"id": entity_id},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         return dict(row) if row else None
 
     async def relationships(
@@ -141,9 +154,10 @@ class EntityRepository:
     ) -> list[dict[str, Any]]:
         """Płaska lista powiązań podmiotu wraz z provenance — do zakładki „Powiązania”."""
         rows = (
-            await self._session.execute(
-                text(
-                    """
+            (
+                await self._session.execute(
+                    text(
+                        """
                     SELECT
                         e.relationship_id, e.direction, e.relationship_type, e.role,
                         e.valid_from, e.valid_to, e.confidence,
@@ -167,8 +181,11 @@ class EntityRepository:
                     ORDER BY (e.valid_to IS NULL) DESC, e.valid_from DESC NULLS LAST
                     LIMIT :limit
                     """
-                ),
-                {"id": entity_id, "include_historical": include_historical, "limit": limit},
+                    ),
+                    {"id": entity_id, "include_historical": include_historical, "limit": limit},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         return [dict(row) for row in rows]

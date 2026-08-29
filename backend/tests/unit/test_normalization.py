@@ -101,3 +101,21 @@ def test_pesel_is_never_stored_in_plaintext() -> None:
 def test_pesel_hash_rejects_malformed_input() -> None:
     with pytest.raises(ValueError, match="11 cyfr"):
         pesel_hash("123", pepper="x")
+
+
+def test_regon_14_digits_validates_both_parts() -> None:
+    """REGON 14-cyfrowy (jednostka lokalna) ma dwie sumy kontrolne — obie muszą się zgadzać."""
+    # Poprawny 9-cyfrowy rdzeń, ale błędna cyfra kontrolna części 14-cyfrowej.
+    assert not is_valid_regon("01234567500001")
+    # Błędny rdzeń dyskwalifikuje cały numer, niezależnie od reszty.
+    assert not is_valid_regon("01234567800001")
+
+
+def test_regon_rejects_other_lengths() -> None:
+    assert not is_valid_regon("0123456")
+    assert not is_valid_regon("")
+
+
+def test_single_token_name_is_treated_as_surname() -> None:
+    """Rejestry bywają niekompletne — jeden token traktujemy jako nazwisko."""
+    assert split_person_name("Kowalski") == ("", "Kowalski")

@@ -118,10 +118,16 @@ async def _build(session: AsyncSession) -> None:
                 attributes={"city": city},
             )
         )
-        session.add(EntityIdentifier(id=uuid.uuid4(), entity_id=entity_id,
-                                     scheme=IdentifierScheme.KRS, value=krs))
-        session.add(EntityIdentifier(id=uuid.uuid4(), entity_id=entity_id,
-                                     scheme=IdentifierScheme.NIP, value=nip))
+        session.add(
+            EntityIdentifier(
+                id=uuid.uuid4(), entity_id=entity_id, scheme=IdentifierScheme.KRS, value=krs
+            )
+        )
+        session.add(
+            EntityIdentifier(
+                id=uuid.uuid4(), entity_id=entity_id, scheme=IdentifierScheme.NIP, value=nip
+            )
+        )
         return entity_id
 
     def person(first: str, last: str, birth_year: int | None) -> uuid.UUID:
@@ -137,9 +143,7 @@ async def _build(session: AsyncSession) -> None:
             )
         )
         session.add(
-            Person(
-                entity_id=entity_id, first_names=first, last_name=last, birth_year=birth_year
-            )
+            Person(entity_id=entity_id, first_names=first, last_name=last, birth_year=birth_year)
         )
         return entity_id
 
@@ -201,19 +205,44 @@ async def _build(session: AsyncSession) -> None:
     # Imiennik — ta sama nazwa, inna osoba. Nie wolno tego scalić automatycznie.
     kowalski_imiennik = person("Jan", "Kowalski", 1990)
 
-    edge(kowalski, firma_a, RelationshipType.BOARD_MEMBER_OF, "PREZES ZARZĄDU",
-         dt.date(2018, 5, 12))
-    edge(kowalski, firma_b, RelationshipType.SHAREHOLDER_OF, "WSPÓLNIK", dt.date(2019, 1, 8),
-         attributes={"share_percent": 40})
+    edge(
+        kowalski, firma_a, RelationshipType.BOARD_MEMBER_OF, "PREZES ZARZĄDU", dt.date(2018, 5, 12)
+    )
+    edge(
+        kowalski,
+        firma_b,
+        RelationshipType.SHAREHOLDER_OF,
+        "WSPÓLNIK",
+        dt.date(2019, 1, 8),
+        attributes={"share_percent": 40},
+    )
     # Powiązanie historyczne — było, minęło. Widoczne dopiero z include_historical=true.
-    edge(kowalski, firma_c, RelationshipType.BOARD_MEMBER_OF, "CZŁONEK ZARZĄDU",
-         dt.date(2020, 2, 1), dt.date(2023, 6, 30))
+    edge(
+        kowalski,
+        firma_c,
+        RelationshipType.BOARD_MEMBER_OF,
+        "CZŁONEK ZARZĄDU",
+        dt.date(2020, 2, 1),
+        dt.date(2023, 6, 30),
+    )
     edge(nowak, firma_b, RelationshipType.BOARD_MEMBER_OF, "PREZES ZARZĄDU", dt.date(2021, 9, 1))
-    edge(nowak, firma_c, RelationshipType.SHAREHOLDER_OF, "AKCJONARIUSZ", dt.date(2022, 4, 15),
-         attributes={"share_percent": 51})
+    edge(
+        nowak,
+        firma_c,
+        RelationshipType.SHAREHOLDER_OF,
+        "AKCJONARIUSZ",
+        dt.date(2022, 4, 15),
+        attributes={"share_percent": 51},
+    )
     edge(kowalski_imiennik, firma_c, RelationshipType.PROXY_OF, "PROKURENT", dt.date(2024, 1, 10))
-    edge(firma_c, firma_a, RelationshipType.PARENT_OF, "PODMIOT DOMINUJĄCY", dt.date(2021, 7, 1),
-         attributes={"share_percent": 75})
+    edge(
+        firma_c,
+        firma_a,
+        RelationshipType.PARENT_OF,
+        "PODMIOT DOMINUJĄCY",
+        dt.date(2021, 7, 1),
+        attributes={"share_percent": 75},
+    )
 
     biuro = address("Aleje Jerozolimskie 100", "Warszawa", "00-807")
     edge(firma_a, biuro, RelationshipType.REGISTERED_AT, valid_from=dt.date(2015, 3, 1))

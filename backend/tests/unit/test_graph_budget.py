@@ -38,3 +38,16 @@ def test_hub_is_not_expanded() -> None:
     assert state.should_expand("normal", degree=10) is True
     assert state.should_expand("hub", degree=DEFAULT_HUB_DEGREE + 1) is False
     assert state.suppressed_hubs == 1
+
+
+def test_unknown_plan_falls_back_to_safe_defaults() -> None:
+    """Literówka w nazwie planu nie może dawać nielimitowanego dostępu."""
+    fallback = GraphBudget.for_plan("enterprise-platinum")
+    assert fallback == GraphBudget()
+    assert fallback.max_depth == 2
+
+
+def test_remaining_nodes_never_goes_negative() -> None:
+    state = ExpansionState.start("root", GraphBudget(max_nodes=3))
+    state.accept(["a", "b"])
+    assert state.remaining_nodes == 0

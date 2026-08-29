@@ -39,12 +39,8 @@ class GraphMeta(BaseModel):
     as_of: dt.date | None
     node_count: int
     edge_count: int
-    truncated: bool = Field(
-        description="True, gdy wynik został przycięty przez budżet zapytania"
-    )
-    suppressed_hubs: int = Field(
-        description="Liczba węzłów-hubów, których celowo nie rozwinięto"
-    )
+    truncated: bool = Field(description="True, gdy wynik został przycięty przez budżet zapytania")
+    suppressed_hubs: int = Field(description="Liczba węzłów-hubów, których celowo nie rozwinięto")
 
 
 class GraphOut(BaseModel):

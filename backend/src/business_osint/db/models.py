@@ -77,6 +77,20 @@ class Entity(Base):
         Index("ix_entities_type_normalized_name", "entity_type", "normalized_name"),
         Index("ix_entities_blocking_key", "blocking_key"),
         Index("ix_entities_degree", "degree"),
+        # Wyszukiwanie rozmyte po nazwie — bez tego operator `%` to seq scan.
+        Index(
+            "ix_entities_normalized_name_trgm",
+            "normalized_name",
+            postgresql_using="gin",
+            postgresql_ops={"normalized_name": "gin_trgm_ops"},
+        ),
+        # Aktywne encje to 99% odczytow — indeks czesciowy jest mniejszy i cieplejszy.
+        Index(
+            "ix_entities_active",
+            "entity_type",
+            text("degree DESC"),
+            postgresql_where=text("merged_into_id IS NULL"),
+        ),
     )
 
 
@@ -100,6 +114,7 @@ class EntityIdentifier(Base):
     __table_args__ = (
         UniqueConstraint("scheme", "value", name="uq_entity_identifiers_scheme_value"),
         Index("ix_entity_identifiers_entity_id", "entity_id"),
+        Index("ix_entity_identifiers_value", "value"),
     )
 
 
@@ -271,8 +286,9 @@ class Relationship(Base):
 
     __table_args__ = (
         CheckConstraint("source_entity_id <> target_entity_id", name="no_self_loop"),
-        CheckConstraint("valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",
-                        name="valid_period"),
+        CheckConstraint(
+            "valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from", name="valid_period"
+        ),
         # Nie duplikujemy tej samej aktywnej krawędzi z tego samego okresu.
         # COALESCE, bo NULL != NULL — bez tego dwa wiersze z valid_from IS NULL
         # przeszłyby przez unique index.
@@ -281,7 +297,7 @@ class Relationship(Base):
             "source_entity_id",
             "target_entity_id",
             "relationship_type",
-            text("COALESCE(valid_from, 'epoch'::date)"),
+            text("COALESCE(valid_from, '1970-01-01'::date)"),
             unique=True,
             postgresql_where=text("superseded_at IS NULL"),
         ),
@@ -289,17 +305,20 @@ class Relationship(Base):
         # scan — krawędź da się zbudować bez dotykania heapu.
         Index(
             "ix_relationships_out",
-            "source_entity_id", "relationship_type",
+            "source_entity_id",
+            "relationship_type",
             postgresql_include=["target_entity_id", "valid_from", "valid_to", "confidence_score"],
             postgresql_where=text("superseded_at IS NULL"),
         ),
         Index(
             "ix_relationships_in",
-            "target_entity_id", "relationship_type",
+            "target_entity_id",
+            "relationship_type",
             postgresql_include=["source_entity_id", "valid_from", "valid_to", "confidence_score"],
             postgresql_where=text("superseded_at IS NULL"),
         ),
         Index("ix_relationships_valid", "valid_from", "valid_to"),
+        Index("ix_relationships_type", "relationship_type"),
     )
 
 

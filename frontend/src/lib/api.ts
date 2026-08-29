@@ -103,7 +103,5 @@ export const api = {
   entity: (id: string) => get<EntityProfile>(`/entities/${id}`),
   relationships: (id: string) => get<Relationship[]>(`/entities/${id}/relationships`),
   graph: (id: string, depth = 2, includeHistorical = false) =>
-    get<GraphResponse>(
-      `/graph/${id}?depth=${depth}&include_historical=${includeHistorical}`,
-    ),
+    get<GraphResponse>(`/graph/${id}?depth=${depth}&include_historical=${includeHistorical}`),
 };
