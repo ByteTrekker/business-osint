@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: osint
+          POSTGRES_PASSWORD: osint
+          POSTGRES_DB: osint_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U osint"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalacja
+        working-directory: backend
+        run: pip install -e ".[etl,dev]"
+
+      - name: Ruff
+        working-directory: backend
+        run: ruff check src tests
+
+      - name: Mypy
+        working-directory: backend
+        run: mypy src
+
+      - name: Testy jednostkowe
+        working-directory: backend
+        run: pytest tests/unit -q
+
+      - name: Migracje
+        working-directory: backend
+        env:
+          BUSINESS_OSINT_DATABASE_URL: postgresql+asyncpg://osint:osint@localhost:5432/osint_test
+        run: alembic upgrade head
+
+      - name: Testy integracyjne
+        working-directory: backend
+        env:
+          BUSINESS_OSINT_TEST_DATABASE_URL: postgresql+asyncpg://osint:osint@localhost:5432/osint_test
+        run: pytest tests/integration -q -m integration
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - working-directory: frontend
+        run: npm install
+      - working-directory: frontend
+        run: npm run typecheck
+      - working-directory: frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
