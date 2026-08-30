@@ -166,6 +166,87 @@ async def _lei_to_entity_id(session: Any) -> dict[str, Any]:
     return {f"lei:{value}": entity_id for value, entity_id in rows}
 
 
+async def _read_relationship_rows(local_path: str | None) -> list[dict[str, str]]:
+    """Wczytuje plik relacji: z dysku, jeśli podano ścieżkę, inaczej z sieci.
+
+    Ścieżka lokalna pozwala nie powtarzać 24 MB pobierania po błędzie sieci
+    albo po poprawce w mapperze.
+    """
+    if local_path:
+        # ASYNC240: odczyt jest jednorazowy i poprzedza całe I/O sieciowe,
+        # więc krótkie zablokowanie pętli jest tańsze niż nowa zależność.
+        payload = pathlib.Path(local_path).read_bytes()  # noqa: ASYNC240
+    else:
+        url = await _latest_relationship_file_url()
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(600.0, read=600.0), follow_redirects=True
+        ) as http:
+            response = await http.get(url)
+            response.raise_for_status()
+            payload = response.content
+    return _read_csv_zip(payload)
+
+
+async def import_missing_counterparties(*, local_path: str | None = None) -> GleifImportStats:
+    """Dociąga podmioty, na które wskazują relacje, a których nie mamy w bazie.
+
+    Bez tego kroku krawędź do zagranicznej spółki matki jest odrzucana — a to
+    właśnie te krawędzie niosą informację o transgranicznej strukturze
+    właścicielskiej, czyli o tym, kto naprawdę kontroluje polską spółkę.
+    """
+    stats = GleifImportStats()
+    rows = await _read_relationship_rows(local_path)
+
+    factory = get_sessionmaker()
+    async with factory() as session:
+        known = await _known_leis(session)
+
+    missing: set[str] = set()
+    for row in rows:
+        relationship = parse_relationship_row(row)
+        if relationship is None:
+            continue
+        parent = relationship.source_key.removeprefix("lei:")
+        child = relationship.target_key.removeprefix("lei:")
+        if parent in known and child not in known:
+            missing.add(child)
+        elif child in known and parent not in known:
+            missing.add(parent)
+
+    if not missing:
+        return stats
+
+    client = GleifClient()
+    try:
+        async for document in client.fetch_by_leis(sorted(missing)):
+            async with factory() as session, session.begin():
+                source_id = await get_or_create_source(
+                    session, SourceKind.GLEIF, "api.gleif.org", "https://api.gleif.org"
+                )
+                raw_id, is_new = await store_raw_document(
+                    session,
+                    source_id=source_id,
+                    external_id=document.external_id,
+                    url=document.url,
+                    fetched_at=document.fetched_at,
+                    content_sha256=document.content_sha256,
+                    payload=document.payload,
+                )
+                if not is_new:
+                    stats.pages_skipped += 1
+                    continue
+                parsed = parse_lei_page(document.payload)
+                load_stats = await load_document(
+                    session, parsed, raw_document_id=raw_id, close_missing=False
+                )
+                stats.entities_created += load_stats.entities_created
+                stats.entities_matched += load_stats.entities_matched
+            stats.pages += 1
+    finally:
+        await client.aclose()
+    return stats
+
+
 async def _latest_relationship_file_url() -> str:
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0), follow_redirects=True) as http:
         response = await http.get(GOLDEN_COPY_URL, params={"per_page": 1})

@@ -33,6 +33,8 @@ class RelationshipType(StrEnum):
     PARENT_OF = "parent_of"  # spółka -> spółka zależna
     REGISTERED_AT = "registered_at"  # podmiot -> adres
     SUCCESSOR_OF = "successor_of"  # przekształcenie / połączenie
+    # wykonawca -> zamawiający (zamówienia publiczne)
+    CONTRACTOR_OF = "contractor_of"
     # Krawędzie wyprowadzone (nie pochodzą wprost z rejestru):
     SHARES_ADDRESS_WITH = "shares_address_with"
     SHARES_PERSON_WITH = "shares_person_with"

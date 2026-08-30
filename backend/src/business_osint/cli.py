@@ -97,5 +97,21 @@ def enrich_whitelist(
     typer.echo(f"\nBiała lista VAT: {stats.as_dict()}")
 
 
+@app.command("import-bzp")
+def import_bzp(days: int = typer.Option(30, help="Ile dni wstecz pobrać")) -> None:
+    """Importuje ogłoszenia o zamówieniach publicznych (BZP, bez klucza)."""
+    from business_osint.etl.bzp_pipeline import BzpStats, import_notices
+
+    def show(stats: BzpStats) -> None:
+        typer.echo(
+            f"  strony: {stats.pages}, encje: +{stats.entities_created}, "
+            f"relacje: +{stats.relationships_created}\r",
+            nl=False,
+        )
+
+    stats = asyncio.run(import_notices(days_back=days, progress=show))
+    typer.echo(f"\nBZP: {stats.as_dict()}")
+
+
 if __name__ == "__main__":
     app()

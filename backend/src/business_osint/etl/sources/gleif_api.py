@@ -93,6 +93,21 @@ class GleifClient:
                 return
             cursor = next_cursor
 
+    async def fetch_by_leis(self, leis: list[str]) -> AsyncIterator[FetchedDocument]:
+        """Pobiera konkretne rekordy LEI po identyfikatorze.
+
+        Używane do domykania grafu: relacje właścicielskie wskazują na spółki
+        matki, które często są zagraniczne, więc nie ma ich w imporcie krajowym.
+        Bez nich krawędź nie ma drugiego końca i przepada.
+        """
+        for start in range(0, len(leis), MAX_PAGE_SIZE):
+            batch = leis[start : start + MAX_PAGE_SIZE]
+            yield await self._client.get_json(
+                f"{BASE_URL}/lei-records",
+                external_id=f"lei-records/by-id/{start}",
+                params={"filter[lei]": ",".join(batch), "page[size]": MAX_PAGE_SIZE},
+            )
+
     async def fetch_parent(self, lei: str, *, ultimate: bool = False) -> dict[str, Any] | None:
         """Spółka dominująca. ``None`` znaczy „brak relacji", nie „błąd"."""
         kind = "ultimate-parent" if ultimate else "direct-parent"
