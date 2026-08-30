@@ -25,14 +25,53 @@ Firma A ──prezes zarządu── Jan Kowalski ──udziałowiec── Firma 
 
 ## Uruchomienie
 
+### Lokalnie (ścieżka zweryfikowana)
+
+Wymaga PostgreSQL 17 i Node 22. Baza z Homebrew:
+
 ```bash
-cp .env.example .env
-make up          # postgres + api + frontend
-make seed        # dane demonstracyjne (bez dostępu do rejestrów)
+brew install postgresql@17 && brew services start postgresql@17
+createuser -s osint 2>/dev/null; createdb -O osint osint
 ```
 
-* API i dokumentacja: http://localhost:8000/docs
+```bash
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[etl,dev]"
+cd ../frontend && npm ci
+```
+
+```bash
+make db-local    # migracje
+make dev-api     # API na :8000   (osobny terminal)
+make dev-web     # frontend na :3000 (osobny terminal)
+```
+
+Dane — jedno z dwóch:
+
+```bash
+cd backend && PYTHONPATH=src .venv/bin/python -m business_osint.cli seed
+```
+
+```bash
+cd backend && PYTHONPATH=src .venv/bin/python -m business_osint.cli import-gleif
+```
+
+Pierwsze to dane demonstracyjne (zmyślone, działa bez sieci), drugie to prawdziwe
+dane z GLEIF — ok. 36 tys. polskich firm i 1,1 tys. powiązań kapitałowych, ~4 minuty.
+
 * Frontend: http://localhost:3000
+* API i dokumentacja: http://localhost:8000/docs
+
+### W Dockerze
+
+```bash
+cp .env.example .env
+make up
+make seed
+```
+
+> **Uwaga:** ścieżka dockerowa **nie została uruchomiona ani razu** — pliki
+> `docker-compose.yml` i `Dockerfile` istnieją, ale demon Dockera był niedostępny
+> w środowisku, w którym powstawał ten kod. Traktuj ją jako niezweryfikowaną.
 
 ```bash
 make test        # testy jednostkowe (bez bazy, ~0.2 s)
