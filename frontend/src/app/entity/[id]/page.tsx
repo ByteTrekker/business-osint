@@ -5,6 +5,20 @@ import { RelationshipGraph } from "@/components/RelationshipGraph";
 
 export const dynamic = "force-dynamic";
 
+/** Surowe kody ról ze źródeł na czytelne etykiety. Kod zostaje, gdy go nie znamy —
+ *  lepiej pokazać oryginał niż udawać, że rozumiemy każdą wartość z rejestru. */
+const ROLE_LABELS: Record<string, string> = {
+  IS_DIRECTLY_CONSOLIDATED_BY: "spółka zależna (bezpośrednio)",
+  IS_ULTIMATELY_CONSOLIDATED_BY: "spółka zależna (ostatecznie)",
+  IS_SUBFUND_OF: "subfundusz",
+  parent_of: "podmiot dominujący",
+  registered_at: "siedziba",
+};
+
+function formatRole(role: string | null, type: string): string {
+  return ROLE_LABELS[role ?? ""] ?? ROLE_LABELS[type] ?? role ?? type;
+}
+
 function formatPeriod(from: string | null, to: string | null): string {
   if (!from && !to) return "—";
   return `${from ?? "?"} → ${to ?? "obecnie"}`;
@@ -58,7 +72,7 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
                 <td>
                   <Link href={`/entity/${rel.other_id}`}>{rel.other_name}</Link>
                 </td>
-                <td>{rel.role ?? rel.type}</td>
+                <td>{formatRole(rel.role, rel.type)}</td>
                 <td>{formatPeriod(rel.valid_from, rel.valid_to)}</td>
                 <td className="rels__source">
                   {/* Provenance jest częścią produktu, nie dodatkiem: użytkownik

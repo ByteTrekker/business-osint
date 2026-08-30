@@ -29,7 +29,16 @@ cytoscape.use(fcose);
  * w jednym miejscu jest uczciwsze niż `as any` przy każdym wywołaniu layoutu.
  */
 function fcoseLayout(animate: boolean, randomize = true): LayoutOptions {
-  return { name: "fcose", animate, randomize } as unknown as LayoutOptions;
+  // Domyślne odpychanie zlepia etykiety w nieczytelną plamę przy kilkunastu
+  // węzłach — nazwy polskich spółek są długie.
+  return {
+    name: "fcose",
+    animate,
+    randomize,
+    nodeRepulsion: 12000,
+    idealEdgeLength: 160,
+    padding: 40,
+  } as unknown as LayoutOptions;
 }
 
 const NODE_COLORS: Record<string, string> = {
@@ -49,6 +58,8 @@ const EDGE_LABELS: Record<string, string> = {
   proxy_of: "prokurent",
   parent_of: "podmiot dominujący",
   registered_at: "adres",
+  shares_address_with: "wspólny adres",
+  shares_person_with: "wspólna osoba",
   liquidator_of: "likwidator",
 };
 
@@ -97,6 +108,11 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    // React w trybie strict montuje efekt dwukrotnie. Bez tej flagi odpowiedź
+    // z API dolatuje do instancji Cytoscape, która została już zniszczona,
+    // i wywala się na wewnętrznym `isHeadless`.
+    let cancelled = false;
 
     const cy = cytoscape({
       container,
@@ -157,6 +173,7 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
     async function expand(entityId: string) {
       try {
         const neighbourhood = await api.graph(entityId, 1);
+        if (cancelled) return;
         const existing = new Set(cy.elements().map((el: SingularElementArgument) => el.id()));
         const fresh = toElements(neighbourhood).filter((el) => !existing.has(el.data.id as string));
         if (fresh.length === 0) return;
@@ -170,16 +187,21 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
     api
       .graph(rootId, depth)
       .then((graph) => {
+        if (cancelled) return;
         cy.add(toElements(graph));
         cy.layout(fcoseLayout(false)).run();
         setMeta(graph.meta);
       })
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "Błąd pobierania grafu"),
-      )
-      .finally(() => setLoading(false));
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setError(cause instanceof Error ? cause.message : "Błąd pobierania grafu");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
+      cancelled = true;
       cy.destroy();
       cyRef.current = null;
     };
