@@ -375,6 +375,48 @@ class EntityMerge(Base):
     __table_args__ = (Index("ix_entity_merges_merged_id", "merged_id"),)
 
 
+class FinancialReport(Base):
+    """Dane finansowe podmiotu za okres sprawozdawczy.
+
+    Osobna tabela, a nie JSONB w ``companies``, bo finanse są z natury
+    szeregiem czasowym i będą filtrowane („spółki o przychodzie > 100 mln").
+    Wartości trzymamy w groszach jako NUMERIC — kwoty podatkowe nie znoszą
+    zmiennoprzecinkowych zaokrągleń.
+    """
+
+    __tablename__ = "financial_reports"
+
+    id: Mapped[uuid_pk]
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
+    )
+    period_from: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    period_to: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    revenue: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    costs: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    income: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    loss: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    tax_base: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    tax_due: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="PLN")
+    #: Skąd pochodzi ten wiersz — bez tego nie da się rozstrzygnąć rozbieżności
+    #: między zeznaniem CIT a sprawozdaniem finansowym.
+    raw_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("raw_documents.id", ondelete="SET NULL")
+    )
+    attributes: Mapped[json_col]
+    recorded_at: Mapped[utc_now]
+
+    __table_args__ = (
+        UniqueConstraint(
+            "entity_id", "period_from", "period_to", name="uq_financial_reports_period"
+        ),
+        CheckConstraint("period_to >= period_from", name="period_valid"),
+        Index("ix_financial_reports_entity", "entity_id", "period_to"),
+        Index("ix_financial_reports_revenue", "revenue"),
+    )
+
+
 class IngestionTask(Base):
     """Jednostka pracy pobierania — wznawialna i idempotentna.
 

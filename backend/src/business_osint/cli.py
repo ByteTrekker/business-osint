@@ -113,5 +113,17 @@ def import_bzp(days: int = typer.Option(30, help="Ile dni wstecz pobrać")) -> N
     typer.echo(f"\nBZP: {stats.as_dict()}")
 
 
+@app.command("import-cit")
+def import_cit(
+    path: str = typer.Argument(..., help="Ścieżka do pliku .xls z wykazu MF"),
+    dataset: str = typer.Option("pod", help="pod | pgk | nier"),
+) -> None:
+    """Importuje dane finansowe z wykazu podatników CIT (art. 27b)."""
+    from business_osint.etl.cit_pipeline import import_cit_file
+
+    stats = asyncio.run(import_cit_file(path, dataset=dataset))
+    typer.echo(f"CIT [{dataset}]: {stats.as_dict()}")
+
+
 if __name__ == "__main__":
     app()
