@@ -23,7 +23,10 @@ def refresh_degrees() -> None:
     """Przelicza zdenormalizowany stopień węzłów (entities.degree)."""
     from business_osint.etl.maintenance import recompute_degrees
 
-    count = asyncio.run(recompute_degrees())
+    def show(done: int) -> None:
+        typer.echo(f"  zaktualizowano: {done:,}\r", nl=False)
+
+    count = asyncio.run(recompute_degrees(progress=show))
     typer.echo(f"Zaktualizowano {count} encji.")
 
 
@@ -54,6 +57,7 @@ def import_gleif(
     from business_osint.etl.gleif_pipeline import (
         GleifImportStats,
         import_lei_records,
+        import_missing_counterparties,
         import_relationships,
     )
 
@@ -73,6 +77,11 @@ def import_gleif(
         )
         typer.echo(f"\nRekordy LEI: {stats.as_dict()}")
         if relationships:
+            # Najpierw dociągamy podmioty, na które wskazują relacje — najczęściej
+            # zagraniczne spółki matki. Bez nich krawędź traci jeden koniec
+            # i przepada (3567 krawędzi przy pierwszym przebiegu).
+            missing = await import_missing_counterparties()
+            typer.echo(f"Dociągnięte kontrahenty: {missing.as_dict()}")
             rel_stats = await import_relationships()
             typer.echo(f"Relacje właścicielskie: {rel_stats.as_dict()}")
 
@@ -123,6 +132,38 @@ def import_cit(
 
     stats = asyncio.run(import_cit_file(path, dataset=dataset))
     typer.echo(f"CIT [{dataset}]: {stats.as_dict()}")
+
+
+@app.command("import-ceidg")
+def import_ceidg(
+    region: str = typer.Option("", help="Tylko jedno województwo (pusty = wszystkie)"),
+) -> None:
+    """Importuje CEIDG ze zrzutów zbiorczych hurtowni danych.
+
+    Używa endpointu /raporty (17 żądań na całą Polskę), a nie /firmy, który
+    przy limicie 25 rekordów na stronę wymagałby 100 tys. żądań.
+    """
+    from business_osint.config import get_settings
+    from business_osint.etl.ceidg_pipeline import CeidgStats, import_all_regions
+
+    settings = get_settings()
+    if not settings.has_ceidg_access:
+        typer.echo("Brak tokenu: ustaw BUSINESS_OSINT_CEIDG_TOKEN w .env", err=True)
+        raise typer.Exit(1)
+
+    def show(stats: CeidgStats, region_name: str) -> None:
+        typer.echo(
+            f"  [{stats.regions:2}] {region_name[:24]:26} "
+            f"firmy={stats.companies:>7} osoby={stats.people:>7} "
+            f"relacje={stats.relationships:>8}"
+        )
+
+    stats = asyncio.run(
+        import_all_regions(settings.ceidg_token, only_region=region or None, progress=show)
+    )
+    typer.echo(f"\nCEIDG: {stats.as_dict()}")
+    for err in stats.errors[:5]:
+        typer.echo(f"  blad: {err}", err=True)
 
 
 if __name__ == "__main__":

@@ -135,9 +135,15 @@ async def test_hub_is_not_expanded_and_is_reported(db_session) -> None:
         shell = await _company(db_session, f"SHELL {i}")
         await _edge(db_session, shell, hub, RelationshipType.REGISTERED_AT)
 
-    from business_osint.etl.maintenance import _RECOMPUTE_DEGREES
+    # Test steruje instrukcjami wprost, bo `recompute_degrees()` celowo
+    # pracuje na własnym silniku ETL i w osobnych transakcjach — nie zobaczyłby
+    # danych zapisanych w transakcji testu. Sprawdzamy tu ten sam SQL, który
+    # idzie na produkcję, łącznie z aktualizacją partiami.
+    from business_osint.etl.maintenance import _BUILD_DEGREES, _UPDATE_BATCH
 
-    await db_session.execute(_RECOMPUTE_DEGREES)
+    for statement in _BUILD_DEGREES:
+        await db_session.execute(statement)
+    await db_session.execute(_UPDATE_BATCH, {"batch_size": 1000})
 
     budget = GraphBudget(max_depth=3, max_nodes=500, fanout_per_node=100, hub_degree=20)
     result = await GraphRepository(db_session).neighborhood(root, budget=budget, depth=3)
