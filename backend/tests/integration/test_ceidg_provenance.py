@@ -80,10 +80,13 @@ async def test_every_edge_from_a_bulk_import_has_provenance(db_session) -> None:
 
     await _import(db_session, CeidgStats())
 
+    # Sprawdzamy liczbę naruszeń, nie `report.ok`. Kontrola ma próg 733 na
+    # dług z importu sprzed wprowadzenia pochodzenia, a w teście każde
+    # naruszenie jest regresją tej zmiany.
     report = await execute_checks(
         db_session, [c for c in CHECKS if c.name == "relationship_has_provenance"]
     )
-    assert report.ok, report.results[0].sample
+    assert report.results[0].violations == 0, report.results[0].sample
 
 
 async def test_locator_points_at_the_row_inside_the_report(db_session) -> None:
@@ -119,10 +122,13 @@ async def test_second_import_backfills_edges_left_without_provenance(db_session)
     await _import(db_session, stats)
 
     assert stats.provenance_backfilled > 0
+    # Sprawdzamy liczbę naruszeń, nie `report.ok`. Kontrola ma próg 733 na
+    # dług z importu sprzed wprowadzenia pochodzenia, a w teście każde
+    # naruszenie jest regresją tej zmiany.
     report = await execute_checks(
         db_session, [c for c in CHECKS if c.name == "relationship_has_provenance"]
     )
-    assert report.ok, report.results[0].sample
+    assert report.results[0].violations == 0, report.results[0].sample
 
 
 async def test_building_and_unit_land_in_their_own_columns(db_session) -> None:

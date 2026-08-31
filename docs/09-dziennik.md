@@ -12,6 +12,48 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Reimport CEIDG i dwa naruszenia, które nim nie zniknęły
+
+**Wynik reimportu.** 17 województw, 3 562 642 wiersze, zero błędów. Krawędzie
+bez pochodzenia: **6 392 682 → 733**, czyli 99,99% naprawione. Adresów z numerem
+budynku: 0 → 2 373 660, co zdejmuje blokadę z mapy zbiorczej. Encji przybyło
+169 — naprawa poszła w miejscu, nic nie zostało skasowane.
+
+**733 krawędzie, których reimport nie mógł naprawić.** To 372 realne, aktywne
+firmy z poprawnymi NIP-ami, zaimportowane 30 sierpnia. Raporty CEIDG są
+migawkami i tych wpisów w bieżących już nie ma. Mieliśmy dla nich źródło —
+raport z 30 sierpnia — tylko go nie zapisaliśmy, a pliku już nie posiadamy.
+
+Decyzja właściciela projektu: zostawić. Wymyślenie im dokumentu źródłowego
+byłoby gorsze niż policzenie ich. Kontrola dostała **próg 733 z komentarzem**,
+dokładny a nie zaokrąglony: 734. naruszenie to regresja. To jedyne miejsce
+w tym module, gdzie próg jest różny od zera.
+
+**Uwaga na skutek uboczny progu.** Ustawienie progu po cichu osłabiło test
+`test_every_edge_from_a_bulk_import_has_provenance`, który asertował
+`report.ok` — z progiem 733 przeszedłby nawet przy całkowicie zepsutym
+pochodzeniu. Zamienione na porównanie liczby naruszeń do zera. Próg w kontroli
+i asercja w teście to dwie różne rzeczy i łatwo je pomylić.
+
+**22 encje z dwoma LEI-ami — kontrola była zła, nie dane.** Podejrzewałem błąd
+scalania. Sprawdzenie w GLEIF pokazało coś innego:
+
+* **P.S. TRADING** — jeden z dwóch rekordów GLEIF oznacza **wprost jako
+  `DUPLICATE`**.
+* **AVNET** — jeden LEI `LAPSED` pod dawną nazwą, drugi `ISSUED` pod obecną
+  (TD SYNNEX AS POLAND). Ta sama spółka po zmianie nazwy.
+
+Każda z 22 encji ma **jeden** KRS/NIP/REGON i dwa LEI-e, czyli scalenie poszło
+po twardym identyfikatorze krajowym — dokładnie tak, jak wymaga N4. Błąd był
+w kontroli: założyłem, że identyfikator jest jeden na encję w każdym schemacie,
+a LEI tego nie gwarantuje. Kontrola obejmuje teraz wyłącznie `nip`, `krs`
+i `regon`, a wyłączenie LEI ma własny test, żeby nikt go nie cofnął.
+
+Skutek uboczny wart odnotowania: **wygasły LEI pod dawną nazwą jest śladem
+historii nazwy** dla spółek z GLEIF. Nie wykorzystujemy go, ale jest.
+
+---
+
 ## 2026-08-31 — Asercje jakości danych
 
 **Skąd się wzięło.** Przegląd warstwy ETL pod kątem narzędzi, które mogłyby ją

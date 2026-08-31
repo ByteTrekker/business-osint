@@ -96,13 +96,18 @@ CHECKS: tuple[Check, ...] = (
             "Encja z dwoma NIP-ami to dwie encje sklejone w jedną. Dokładnie tak "
             "wyglądała awaria z 69 438 firmami: import CEIDG łączył wiersze po "
             "znormalizowanej nazwie, więc każdy Kowalski bez nazwy firmy trafiał "
-            "do wspólnego węzła razem z cudzymi numerami."
+            "do wspólnego węzła razem z cudzymi numerami. "
+            "Kontrola obejmuje wyłącznie identyfikatory krajowe. LEI jest "
+            "świadomie pominięty: GLEIF wystawia rekordy zduplikowane i wygasłe, "
+            "więc jedna spółka legalnie nosi dwa LEI-e — sprawdzone na 22 "
+            "przypadkach, każdy z jednym KRS-em i dwoma LEI-ami."
         ),
         sql="""
             SELECT e.display_name || ' (' || i.scheme || ' x' || count(*) || ')'
             FROM entity_identifiers i
             JOIN entities e ON e.id = i.entity_id
             WHERE e.merged_into_id IS NULL
+              AND i.scheme IN ('nip', 'krs', 'regon')
             GROUP BY e.id, e.display_name, i.scheme
             HAVING count(*) > 1
         """,
@@ -115,6 +120,12 @@ CHECKS: tuple[Check, ...] = (
             "Nie da się jej ani zweryfikować, ani obronić przed osobą, której "
             "dotyczy."
         ),
+        # 733 krawędzie z importu z 30 sierpnia, sprzed wprowadzenia pochodzenia
+        # do ścieżki masowej. Ich raport źródłowy już nie istnieje — CEIDG
+        # publikuje migawki, a te wpisy w bieżących raportach nie występują.
+        # Wymyślenie im dokumentu byłoby gorsze niż zostawienie ich policzonych.
+        # Próg jest dokładny, nie zaokrąglony: 734. naruszenie to regresja.
+        threshold=733,
         sql="""
             SELECT r.id::text
             FROM relationships r
