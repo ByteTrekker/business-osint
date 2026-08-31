@@ -12,6 +12,50 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Wyszukiwarka, druga tura
+
+**Kolejność słów.** „termika orlen" nie trafiało w ORLEN TERMIKA, bo żaden etap
+prefiksowy tego nie zrobi — zapytanie nie jest początkiem nazwy. Ratował to
+dopiero trigram, poprawnie, ale w setkach milisekund. Indeks pełnotekstowy GIN
+odpowiada w **0,148 ms** i jest niezależny od kolejności.
+
+Konfiguracja `simple`, nie `polish` — tej drugiej PostgreSQL nie ma, a i tak
+byłaby niewłaściwa: nazwy firm nie są językiem naturalnym i sprowadzanie do
+rdzenia zlepiałoby odrębne znaki towarowe. Indeks jest wyrażeniowy, nie na
+kolumnie `tsvector`: kolumna oznaczałaby przepisanie 9,5 mln wierszy i stałe
+pilnowanie spójności. Zbudował się w 26 s i waży 290 MB — mieści się z zapasem
+w 2,1 GB odzyskanych po usunięciu GiST.
+
+Semantyka jest **koniunkcyjna**. Alternatywa dla „jan kowalski" zwracałaby pół
+bazy. Zapytania z wyrazami spoza nazwy — jak „PKN ORLEN", gdzie w bazie stoi
+samo „orlen" — obsługuje nadal trigram na końcu, 200 ms.
+
+**Szukanie po adresie nie działa z zupełnie innego powodu, niż zakładałem.**
+Sądziłem, że to kwestia kolejności słów. Otóż nie: adresy mają
+`normalized_name` sklejone w jeden ciąg — `chemikow732566alwernia` — bo
+normalizacja usuwa spacje. FTS widzi tam **jeden token** i nie ma czego szukać.
+To jest problem kształtu danych, nie zapytania, i wymaga rozdzielenia dwóch
+ról: `addresses.normalized` jest kluczem naturalnym do scalania i musi zostać
+sklejony, a `entities.normalized_name` jest polem wyszukiwania i powinien mieć
+granice słów. Osobne zadanie, bo dotyka 2,4 mln wierszy.
+
+**Filtr statusu — i pułapka, która go po cichu wyłączyła.** Podmiana w pliku
+nie weszła, bo wzorzec rozjechał się o komentarz dodany wcześniej. Zapytanie
+poszło **bez** klauzuli filtrującej, a parametr `:status` był dalej
+przekazywany — i SQLAlchemy zignorowało go bez słowa. Objaw: wszystkie trzy
+wartości statusu zwracały identyczne wyniki, łącznie z `inactive`, dla którego
+w bazie nie ma ani jednego podmiotu. Nic tego nie zgłosiło: ani lint, ani mypy,
+ani żaden test. Wyszło dopiero przy porównaniu wyników dla trzech wartości.
+
+Wniosek na przyszłość: nieużywany parametr wiązany jest cichy i trzeba go
+sprawdzać zachowaniem, a nie obecnością w kodzie.
+
+**Filtr obowiązuje też w trigramie**, ale **nie** w wyszukiwaniu po
+identyfikatorze. Kto podał NIP, chce tę encję — nawet wykreśloną. Filtr stanu
+jest narzędziem przeglądania, nie cenzurą wyniku dokładnego.
+
+---
+
 ## 2026-08-31 — Paginacja i pluskwa, którą wykryła
 
 **Skąd.** API zwracało `limit` i nic poza tym. Lista powiązań ucięta na dwustu

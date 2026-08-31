@@ -468,3 +468,13 @@ h2 {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Filtr stanu w formularzu wyszukiwania. */
+.search select {
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}

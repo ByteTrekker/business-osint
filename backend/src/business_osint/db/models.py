@@ -100,6 +100,16 @@ class Entity(Base):
             text("normalized_name text_pattern_ops"),
             postgresql_include=["entity_type", "degree"],
         ),
+        # Dopasowanie po zbiorze słów, niezależne od ich kolejności. Prefiks nie
+        # znajdzie „ORLEN TERMIKA" dla zapytania „termika orlen", a trigram robi
+        # to w setkach milisekund; ten indeks odpowiada w 0,15 ms.
+        # Konfiguracja `simple`, bo nazwy firm nie są językiem naturalnym —
+        # sprowadzanie do rdzenia zlepiałoby odrębne znaki towarowe.
+        Index(
+            "ix_entities_name_fts",
+            text("to_tsvector('simple', normalized_name)"),
+            postgresql_using="gin",
+        ),
         # Świadomie NIE ma tu indeksu GiST na `normalized_name`. Powstał pod
         # wyszukiwanie po najbliższych sąsiadach (`<->`), które zmierzyliśmy na
         # 2,9 s i porzuciliśmy — a został jako 2,1 GB, największy indeks w bazie.

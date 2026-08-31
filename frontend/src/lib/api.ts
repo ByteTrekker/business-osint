@@ -129,9 +129,10 @@ export const SEARCH_PAGE_SIZE = 20;
 export const RELATIONSHIP_PAGE_SIZE = 50;
 
 export const api = {
-  search: (q: string, { fuzzy = false, offset = 0 } = {}) =>
+  search: (q: string, { fuzzy = false, offset = 0, status = "" } = {}) =>
     get<{ query: string; hits: SearchHit[]; meta: PageMeta }>(
       `/search?q=${encodeURIComponent(q)}&limit=${SEARCH_PAGE_SIZE}&offset=${offset}` +
+        (status ? `&status=${encodeURIComponent(status)}` : "") +
         (fuzzy ? "&fuzzy=true" : ""),
     ),
   entity: (id: string) => get<EntityProfile>(`/entities/${id}`),
