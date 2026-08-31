@@ -24,6 +24,9 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **Szukanie po adresie** — rozdzielone dwie role adresu: klucz scalania
+      zostaje sklejony, pole wyszukiwania dostaje granice słów. 2,4 mln wierszy
+      przepisanych partiami. „chemikow plock" → 6 ms zamiast zera wyników.
 - [x] **Wyszukiwarka — druga tura**: kolejność słów przez indeks pełnotekstowy
       (0,148 ms zamiast 200 ms trigramem) i filtr stanu działalności.
 - [x] **Paginacja** — wyszukiwarka i powiązania, z `meta` w kontrakcie.
@@ -79,13 +82,6 @@ priorytetowi, nie chronologii.
       który jest bieżący, a który zduplikowany albo wygasły.
 
 ## Do zrobienia — funkcje
-
-- [ ] **Szukanie po adresie.** Nie działa i przyczyna jest w danych, nie
-      w zapytaniu: adresy mają `normalized_name` sklejone w jeden ciąg
-      (`chemikow732566alwernia`), bo normalizacja usuwa spacje. FTS widzi tam
-      jeden token. Trzeba rozdzielić dwie role: `addresses.normalized` zostaje
-      kluczem naturalnym do scalania, a `entities.normalized_name` dostaje
-      granice słów. Dotyczy 2,4 mln wierszy, więc to własne zadanie.
 
 - [ ] **Wyszukiwarka — reszta trzeciej tury.**
       - **filtr województwa** — `addresses.voivodeship` istnieje, ale prowadzi

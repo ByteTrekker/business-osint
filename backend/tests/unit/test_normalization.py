@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from business_osint.domain.normalization import (
+    address_natural_key,
+    address_search_key,
     company_name_blocking_key,
     is_valid_krs,
     is_valid_nip,
@@ -228,3 +230,43 @@ def test_nip_prefix_with_remainder_ten_is_always_rejected() -> None:
     dlatego jawny strażnik `control != 10` był martwym kodem.
     """
     assert not any(is_valid_nip("701001234" + str(digit)) for digit in range(10))
+
+
+# --- Adres: dwa klucze, dwie role -------------------------------------------
+
+
+def test_address_search_key_keeps_word_boundaries() -> None:
+    """Klucz wyszukiwania musi mieć spacje — indeks pełnotekstowy dzieli po słowach.
+
+    Bez nich cały adres jest jednym tokenem i zapytanie „chemikow plock" nie ma
+    czego dopasować. Dokładnie tak wyglądało 2,4 mln adresów w bazie.
+    """
+    assert address_search_key("Chemików 7, 09-411 Płock") == "chemikow 7 09 411 plock"
+
+
+def test_address_natural_key_removes_them_on_purpose() -> None:
+    """Klucz scalania musi być sklejony, żeby różnice w zapisie zniknęły."""
+    assert address_natural_key("ul. Chemików 7, 09-411 Płock") == "ulchemikow709411plock"
+
+
+def test_the_two_address_keys_are_not_the_same_value() -> None:
+    """Jedna wartość w dwóch rolach była właśnie tym defektem.
+
+    Ten test istnieje po to, żeby ktoś nie „uprościł" ich z powrotem do jednej
+    funkcji: klucz scalania i pole wyszukiwania mają sprzeczne wymagania.
+    """
+    adres = "Chemików 7, 09-411 Płock"
+
+    assert address_search_key(adres) != address_natural_key(adres)
+
+
+def test_differently_punctuated_addresses_merge_to_one_key() -> None:
+    """„Chemików 7, 09-411, Płock" i „Chemików 7, 09-411 Płock" to ten sam adres."""
+    assert address_natural_key("Chemików 7, 09-411, Płock") == address_natural_key(
+        "Chemików 7, 09-411 Płock"
+    )
+
+
+def test_address_without_a_street_still_yields_searchable_words() -> None:
+    """Adresy wiejskie to sam numer i miejscowość — muszą być wyszukiwalne tak samo."""
+    assert address_search_key("18, 46-310 Jamy") == "18 46 310 jamy"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, text
@@ -86,3 +87,70 @@ async def recompute_degrees(*, progress: Any = None) -> int:
         await session.execute(text("DROP TABLE IF EXISTS entity_degree_tmp"))
 
     return updated
+
+
+#: Wielkość partii przy przepisywaniu nazw adresów. Ta sama zasada co przy
+#: stopniach: pojedynczy UPDATE ma kończyć się w sekundach.
+ADDRESS_BATCH_SIZE = 20_000
+
+# Adresy zaimportowane wcześniej mają w `entities.normalized_name` klucz
+# naturalny — ciąg bez spacji, np. `chemikow709411plock`. Indeks pełnotekstowy
+# widzi tam **jeden token**, więc zapytanie „chemikow plock" nie ma czego
+# dopasować i wyszukiwanie adresu nie działa w ogóle.
+#
+# Klucz naturalny zostaje tam, gdzie jest jego miejsce: w `addresses.normalized`,
+# gdzie służy do scalania. `entities.normalized_name` przechodzi na postać
+# wyszukiwalną.
+#
+# Przeliczamy **w Pythonie**, funkcją `address_search_key`, zamiast odtwarzać
+# składanie napisu w SQL-u. Druga implementacja tej samej reguły rozjechałaby
+# się z pierwszą przy pierwszej zmianie normalizacji, a wtedy część adresów
+# byłaby wyszukiwalna inaczej niż reszta — bez żadnego sygnału, że tak jest.
+# Postęp śledzimy **kursorem po id**, nie warunkiem „nazwa bez spacji".
+# Ten drugi wygląda naturalnie i jest pętlą nieskończoną: adres jednowyrazowy
+# po przeliczeniu nadal nie ma spacji, więc wracałby w każdej kolejnej partii.
+_ADDRESSES_TO_RESPLIT = text("""
+    SELECT e.id, e.display_name
+    FROM entities e
+    WHERE e.entity_type = 'address'
+      AND e.id > CAST(:after AS uuid)
+    ORDER BY e.id
+    LIMIT :batch_size
+""")
+
+_APPLY_ADDRESS_NAMES = text("""
+    UPDATE entities e
+    SET normalized_name = nowa.wartosc
+    FROM (SELECT unnest(CAST(:ids AS uuid[])) AS id,
+                 unnest(CAST(:values AS text[])) AS wartosc) AS nowa
+    WHERE e.id = nowa.id
+""")
+
+
+async def resplit_address_names(*, progress: Any = None) -> int:
+    """Przepisuje nazwy encji adresowych na postać wyszukiwalną. Zwraca liczbę zmian."""
+    from business_osint.domain.normalization import address_search_key
+
+    updated = 0
+    after = uuid.UUID(int=0)
+    factory = get_etl_sessionmaker()
+    while True:
+        async with factory() as session, session.begin():
+            await session.execute(text("SET LOCAL statement_timeout = '15min'"))
+            rows = (
+                await session.execute(
+                    _ADDRESSES_TO_RESPLIT,
+                    {"batch_size": ADDRESS_BATCH_SIZE, "after": str(after)},
+                )
+            ).all()
+            if not rows:
+                return updated
+
+            ids = [row.id for row in rows]
+            values = [address_search_key(row.display_name) for row in rows]
+            await session.execute(_APPLY_ADDRESS_NAMES, {"ids": ids, "values": values})
+
+        after = ids[-1]
+        updated += len(rows)
+        if progress is not None:
+            progress(updated)

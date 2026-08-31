@@ -31,6 +31,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import SourceKind
 from business_osint.domain.normalization import (
+    address_natural_key,
+    address_search_key,
     is_valid_nip,
     normalize_company_name,
     normalize_person_name,
@@ -92,6 +94,8 @@ STAGE_COLUMNS = (
     "owner_normalized",
     "address_display",
     "address_normalized",
+    "address_search",
+    "address_id",
     "wojewodztwo",
     "company_id",
     "owner_id",
@@ -206,7 +210,13 @@ def prepare_row(row: dict[str, Any], *, region: str = "") -> tuple[str, ...] | N
         normalize_company_name(company_name),
         normalize_person_name(owner_display),
         address_display,
-        normalize_person_name(address_display).replace(" ", ""),
+        address_natural_key(address_display),
+        address_search_key(address_display),
+        # Identyfikator adresu wędruje przez tabelę pomocniczą tak samo jak firmy
+        # i właściciela. Wcześniej encję adresu łączyliśmy z wierszem po
+        # `normalized_name` — a to pole przestaje być kluczem naturalnym, bo od
+        # teraz niesie wyszukiwalną postać adresu, ze spacjami.
+        str(uuid.uuid4()),
         region,
         # Identyfikatory generujemy tutaj i przenosimy przez tabelę pomocniczą.
         # Wcześniejsza wersja łączyła encje po znormalizowanej nazwie — a że JDG
@@ -338,25 +348,32 @@ _INSERT_PERSON_DETAILS = text("""
     ON CONFLICT (entity_id) DO NOTHING
 """)
 
+# Encja adresu dostaje identyfikator z tabeli pomocniczej, a nie z `RETURNING`
+# złączonego po nazwie. Poprzednia wersja łączyła `entities.normalized_name`
+# z `address_normalized` — działało tylko dopóki oba pola trzymały tę samą
+# wartość. Teraz `normalized_name` niesie postać **wyszukiwalną**, ze spacjami,
+# a klucz naturalny został w `addresses.normalized`.
 _INSERT_ADDRESSES = text("""
     WITH nowe AS (
         SELECT DISTINCT ON (s.address_normalized)
-               s.address_normalized, s.address_display, s.miejscowosc,
-               s.ulica, s.budynek, s.lokal, s.kod,
+               s.address_id, s.address_normalized, s.address_display, s.address_search,
+               s.miejscowosc, s.ulica, s.budynek, s.lokal, s.kod,
                nullif(s.wojewodztwo, '') AS wojewodztwo
         FROM ceidg_stage s
         WHERE s.address_normalized <> ''
           AND NOT EXISTS (SELECT 1 FROM addresses a WHERE a.normalized = s.address_normalized)
     ), wstawione AS (
         INSERT INTO entities (id, entity_type, display_name, normalized_name)
-        SELECT gen_random_uuid(), 'address', address_display, address_normalized FROM nowe
-        RETURNING id, normalized_name
+        SELECT address_id::uuid, 'address', address_display, address_search FROM nowe
+        ON CONFLICT DO NOTHING
+        RETURNING id
     )
     INSERT INTO addresses (entity_id, city, street, building, unit, postal_code,
                            voivodeship, normalized)
-    SELECT w.id, n.miejscowosc, n.ulica, nullif(n.budynek, ''), nullif(n.lokal, ''),
-           n.kod, n.wojewodztwo, n.address_normalized
-    FROM nowe n JOIN wstawione w ON w.normalized_name = n.address_normalized
+    SELECT n.address_id::uuid, n.miejscowosc, n.ulica, nullif(n.budynek, ''),
+           nullif(n.lokal, ''), n.kod, n.wojewodztwo, n.address_normalized
+    FROM nowe n
+    WHERE EXISTS (SELECT 1 FROM wstawione w WHERE w.id = n.address_id::uuid)
     ON CONFLICT (normalized) DO NOTHING
 """)
 
@@ -478,7 +495,8 @@ _BACKFILL_ADDRESS_DISPLAY = text("""
     UPDATE entities e
     SET display_name = s.address_display
     FROM ceidg_stage s
-    WHERE e.normalized_name = s.address_normalized
+    WHERE e.id = (SELECT a.entity_id FROM addresses a
+                  WHERE a.normalized = s.address_normalized)
       AND e.entity_type = 'address'
       AND e.display_name IS DISTINCT FROM s.address_display
 """)
