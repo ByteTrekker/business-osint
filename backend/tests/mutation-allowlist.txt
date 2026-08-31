@@ -15,3 +15,13 @@ business_osint.domain.normalization.x_person_blocking_key__mutmut_2
 # `not a or not b` -> `not a and not b`: gdy dokładnie jeden argument jest pusty,
 # mutant przechodzi do SequenceMatcher, który dla pustego napisu i tak zwraca 0.0.
 business_osint.domain.identity.x_string_similarity__mutmut_1
+
+# graph_shape: `owner_edges[side] += 1` -> `= 1`.
+# Równoważny. Licznik krawędzi właściciela jest czytany wyłącznie w warunku
+# `degree[person] == 1 and owner_edges[person] == 1`. Przy stopniu równym jeden
+# osoba ma dokładnie jedną krawędź, więc `owner_edges` wynosi 0 albo 1 i obie
+# postaci dają tę samą wartość. Różnica ujawniłaby się dopiero przy dwóch
+# krawędziach właściciela, ale wtedy pierwszy człon warunku jest już fałszywy.
+# Pętli własnych, które mogłyby policzyć jedną krawędź dwa razy, zabrania
+# ograniczenie `ck_relationships_no_self_loop`.
+business_osint.domain.graph_shape.x_redundant_sole_trader_nodes__mutmut_24

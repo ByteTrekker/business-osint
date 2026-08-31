@@ -1,0 +1,6 @@
+# Wyniki przebiegów są lokalne: zależą od maszyny, jej obciążenia i stanu bufora
+# bazy. Wersjonowanie ich sugerowałoby, że da się porównać pomiar z laptopa
+# z pomiarem z serwera — nie da się. Do repozytorium trafia sposób mierzenia,
+# nie liczby.
+*.json
+!baseline.json

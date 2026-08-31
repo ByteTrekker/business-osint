@@ -33,7 +33,11 @@ from business_osint.db.models import (
     RelationshipSource,
 )
 from business_osint.domain.enums import Confidence, EntityType, IdentifierScheme
-from business_osint.domain.normalization import company_name_blocking_key, person_blocking_key
+from business_osint.domain.normalization import (
+    address_search_key,
+    company_name_blocking_key,
+    person_blocking_key,
+)
 from business_osint.etl.sources.krs_mapper import ParsedDocument, ParsedEntity, ParsedRelationship
 
 
@@ -148,7 +152,15 @@ class EntityResolver:
                 id=entity_id,
                 entity_type=parsed.entity_type,
                 display_name=parsed.display_name,
-                normalized_name=parsed.normalized_name,
+                # Adres dostaje **wyszukiwalną** postać nazwy, z granicami słów.
+                # Klucz naturalny, po którym scalamy, zostaje w
+                # `addresses.normalized` — te dwie role dzieliły dotąd jedną
+                # wartość i przez to adresu nie dało się w ogóle wyszukać.
+                normalized_name=(
+                    address_search_key(parsed.display_name)
+                    if parsed.entity_type is EntityType.ADDRESS
+                    else parsed.normalized_name
+                ),
                 blocking_key=blocking_key,
             )
         )

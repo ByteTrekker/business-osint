@@ -1,0 +1,123 @@
+{
+  "$opis": [
+    "Scenariusze pomiaru wydajności, zapisane jako DANE, nie jako kod.",
+    "",
+    "Ten plik jest trwałym artefaktem: ma przetrwać przepisanie backendu na inny",
+    "język i zamianę bazy danych. Dlatego opisuje wyłącznie to, co widzi klient —",
+    "ścieżkę HTTP i parametry — a nie zapytania SQL ani wywołania funkcji.",
+    "",
+    "Podmioty wskazujemy przez WYSZUKANIE po numerze rejestrowym, nigdy po UUID.",
+    "Identyfikatory encji są lokalne dla instalacji i zmieniają się przy każdym",
+    "imporcie; numer KRS jest ten sam wszędzie i na zawsze.",
+    "",
+    "Każdy scenariusz ma `oczekiwane_min` — najmniejszą liczbę wyników, jaka jest",
+    "poprawna. Bez tego pomiar mierzy tylko szybkość, a implementacja, która",
+    "zwraca mniej wyników, wychodzi na szybszą. To najczęstszy sposób, w jaki",
+    "benchmark zaczyna kłamać."
+  ],
+
+  "podmioty": {
+    "spolka_z_historia": {
+      "opis": "ORLEN S.A. — spółka z odpisem KRS, historią nazwy i kapitału",
+      "szukaj": "0000028860"
+    },
+    "adres_zbiorczy": {
+      "opis": "Adres z dużą liczbą zarejestrowanych podmiotów",
+      "szukaj": "chemikow 7 plock",
+      "typ": "address"
+    }
+  },
+
+  "scenariusze": [
+    {
+      "nazwa": "wyszukiwanie_po_numerze",
+      "mierzy": "Najtańsza ścieżka: trafienie w indeks identyfikatorów.",
+      "sciezka": "/search",
+      "parametry": { "q": "0000028860", "limit": 20 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "wyszukiwanie_nazwa_dokladna",
+      "mierzy": "Dopasowanie dokładne nazwy — etap drugi wyszukiwarki.",
+      "sciezka": "/search",
+      "parametry": { "q": "ORLEN", "limit": 20 },
+      "oczekiwane_min": 5
+    },
+    {
+      "nazwa": "wyszukiwanie_kolejnosc_slow",
+      "mierzy": "Dopasowanie po zbiorze słów, niezależne od kolejności.",
+      "sciezka": "/search",
+      "parametry": { "q": "termika orlen", "limit": 20 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "wyszukiwanie_prefiks_pospolity",
+      "mierzy": "Najgorszy przypadek prefiksu — setki tysięcy kandydatów.",
+      "sciezka": "/search",
+      "parametry": { "q": "przedsiebiorstwo", "limit": 20 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "wyszukiwanie_rozmyte",
+      "mierzy": "Ścieżka ostateczna: trigram, gdy nic innego nie trafia.",
+      "sciezka": "/search",
+      "parametry": { "q": "orlem spolka", "limit": 20 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "wyszukiwanie_adresu",
+      "mierzy": "Adres jako encja wyszukiwalna po słowach.",
+      "sciezka": "/search",
+      "parametry": { "q": "chemikow plock", "limit": 20 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "wyszukiwanie_strona_dalsza",
+      "mierzy": "Koszt stronicowania w głąb — rośnie z przesunięciem.",
+      "sciezka": "/search",
+      "parametry": { "q": "ORLEN", "limit": 20, "offset": 20 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "profil_podmiotu",
+      "mierzy": "Odczyt profilu razem z atrybutami i finansami.",
+      "sciezka": "/entities/{spolka_z_historia}",
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "powiazania_strona_pierwsza",
+      "mierzy": "Lista powiązań z pochodzeniem każdego faktu.",
+      "sciezka": "/entities/{spolka_z_historia}/relationships",
+      "parametry": { "limit": 50 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "sasiedzi_spod_adresu",
+      "mierzy": "Podmioty pod wspólnym adresem — pytanie o współlokację.",
+      "sciezka": "/entities/{adres_zbiorczy}/co-located",
+      "parametry": { "limit": 50 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "graf_glebokosc_1",
+      "mierzy": "Traversal jednopoziomowy.",
+      "sciezka": "/graph/{spolka_z_historia}",
+      "parametry": { "depth": 1 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "graf_glebokosc_2",
+      "mierzy": "Traversal dwupoziomowy — typowe użycie w interfejsie.",
+      "sciezka": "/graph/{spolka_z_historia}",
+      "parametry": { "depth": 2 },
+      "oczekiwane_min": 1
+    },
+    {
+      "nazwa": "graf_glebokosc_3",
+      "mierzy": "Najdroższa operacja w produkcie; tu działa budżet zapytania.",
+      "sciezka": "/graph/{spolka_z_historia}",
+      "parametry": { "depth": 3 },
+      "oczekiwane_min": 1
+    }
+  ]
+}

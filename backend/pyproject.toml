@@ -18,7 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-etl = ["polars>=1.15", "pyarrow>=18"]
+# DuckDB czyta shapefile i GML bez GDAL-a w systemie i reprojektuje
+# współrzędne — cała obsługa PRG mieści się w jednej zależności pip.
+etl = ["duckdb>=1.1"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -52,6 +54,10 @@ also_copy = [
     "pyproject.toml",
     "src/business_osint/__init__.py",
     "src/business_osint/etl/",
+    # Runner pomiarowy leży poza pakietem, bo ma działać bez instalowania
+    # czegokolwiek. Jego test ładuje go po ścieżce, więc plik musi być
+    # w piaskownicy — inaczej zbieranie testów pada i mutmut nie startuje.
+    "ops/",
 ]
 # Tylko testy jednostkowe — integracyjne wymagałyby bazy przy każdym mutancie.
 pytest_add_cli_args_test_selection = ["tests/unit/"]
