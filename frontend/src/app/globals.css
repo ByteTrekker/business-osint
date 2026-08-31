@@ -478,3 +478,41 @@ h2 {
   color: var(--fg);
   font: inherit;
 }
+
+/* Numery LEI ze stanem rejestracji. */
+.lei {
+  margin-top: 2rem;
+}
+.lei__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+.lei__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+  padding: 0.35rem 0;
+}
+.lei__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+.lei__status {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+.lei__status--current {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.lei__name {
+  font-size: 0.85rem;
+  color: var(--muted);
+}

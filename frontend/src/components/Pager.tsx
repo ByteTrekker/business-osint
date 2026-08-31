@@ -23,7 +23,8 @@ export default function Pager({ meta, href, noun = "wyników" }: Props) {
 
   const from = offset + 1;
   const to = offset + returned;
-  const range = total === null ? `${from}–${to}` : `${from}–${to} z ${total}`;
+  const range =
+    total === null ? `${from}–${to}` : `${from}–${to} z ${total.toLocaleString("pl-PL")}`;
 
   return (
     <nav className="pager" aria-label={`Strony ${noun}`}>

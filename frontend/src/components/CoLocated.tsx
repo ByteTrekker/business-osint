@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { counted } from "@/lib/plural";
 import { api } from "@/lib/api";
 import Pager from "@/components/Pager";
 
@@ -32,7 +33,7 @@ export default async function CoLocated({ entityId, offset, href }: Props) {
 
   return (
     <section>
-      <h2>Pod tym samym adresem ({total})</h2>
+      <h2>Pod tym samym adresem: {counted(total, "podmiot", "podmioty", "podmiotów")}</h2>
 
       {total > CROWDED && (
         <p className="hint">

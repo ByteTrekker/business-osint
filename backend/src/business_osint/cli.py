@@ -87,6 +87,24 @@ def resplit_addresses() -> None:
     typer.echo(f"Przepisano {count:,} adresów.")
 
 
+@app.command("backfill-lei")
+def backfill_lei() -> None:
+    """Wyciąga stan rejestracji LEI z już pobranych dokumentów GLEIF.
+
+    Bez sieci: wszystkie numery LEI w bazie mają pokrycie w `raw_documents`.
+    Ponad jedna trzecia rekordów jest oznaczona `LAPSED` albo `DUPLICATE`,
+    a bez tej informacji dwa LEI-e przy jednej spółce wyglądają jak błąd
+    scalania, choć są normalnym stanem rejestru.
+    """
+    from business_osint.etl.maintenance import backfill_lei_records
+
+    def show(done: int) -> None:
+        typer.echo(f"  rekordów: {done:,}\r", nl=False)
+
+    count = asyncio.run(backfill_lei_records(progress=show))
+    typer.echo(f"Przetworzono {count:,} rekordów LEI.")
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(
