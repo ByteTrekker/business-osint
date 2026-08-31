@@ -78,10 +78,11 @@ priorytetowi, nie chronologii.
       niczego nie dowodzi (N4), więc scalenie i tak wymaga odpisu KRS jako
       źródła wspólnego identyfikatora. Prawdziwa liczba duplikatów jest większa,
       bo obejmuje też pary o różnym zapisie nazwy.
-- [ ] **Adres tej samej siedziby jako dwie encje** — ORLEN ma
-      `Chemików 7, 09-411 Płock` z odpisu KRS i `Płock Chemików 7, 09-411, Płock`
-      z wcześniejszego importu. Normalizacja adresu różni się między źródłami
-      i trzeba ją ujednolicić, zanim dojdzie dopasowanie do punktów PRG.
+- [ ] **Scalić 12 032 zduplikowane adresy.** Mappery już nie produkują nowych,
+      ale zastane wiersze zostają. Scalenie wymaga przeniesienia krawędzi przez
+      `entity_merges` z zachowaniem N1 i N2 — osobna, ostrożna zmiana. Uwaga:
+      272 pary są w **różnych województwach** i to nie są duplikaty, tylko
+      miejscowości o tej samej nazwie.
 - [ ] **Wyszukiwarka — reszta trzeciej tury.**
       - **filtr województwa** — `addresses.voivodeship` istnieje, ale prowadzi
         do niego krawędź `registered_at`, więc złączenie jest za drogie na
@@ -108,7 +109,10 @@ priorytetowi, nie chronologii.
       Miejsca starczy: 294 GB wolnego, baza zajmuje 12 GB.
       Uwaga: serwer **ignoruje nagłówek `Range`**, więc pobranie jest
       jednorazowe i całościowe — wznawianie odpada, trzeba to uwzględnić
-      w zadaniu ETL.
+      w zadaniu ETL. Zmierzone tempo: ~18 MB/min, czyli ponad 95 minut.
+      Zadanie pobierające **nie może mieć limitu czasu** — ma mieć limit
+      prędkości (przerwij, gdy transfer stanął). Pierwsze podejście padło
+      na 94% przez limit 90 minut i całość poszła do kosza.
       Współrzędne są w EPSG:2180 (PUWG 1992), do mapy trzeba je przerzutować
       na WGS84 — `pyproj` robi to poprawnie, sprawdzone na znanym punkcie.
 

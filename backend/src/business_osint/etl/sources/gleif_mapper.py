@@ -10,10 +10,13 @@ from typing import Any
 
 from business_osint.domain.enums import EntityType, IdentifierScheme, RelationshipType
 from business_osint.domain.normalization import (
+    address_natural_key,
+    format_address,
     is_valid_krs,
     is_valid_nip,
     is_valid_regon,
     normalize_company_name,
+    street_from_address_line,
 )
 from business_osint.etl.sources.krs_mapper import (
     ParsedDocument,
@@ -129,21 +132,42 @@ def _parse_lei_record(record: dict[str, Any]) -> ParsedEntity | None:
 
 
 def _parse_address(record: dict[str, Any]) -> ParsedEntity | None:
+    """Adres z rekordu LEI, rozłożony na kolumny znaczące to samo co u innych źródeł.
+
+    GLEIF wrzuca do `addressLines` całą linię — „PŁOCK BIELSKA 67" — ale podaje
+    też numer budynku i lokalu w osobnych polach. Wcześniejsza wersja brała
+    linię w całości jako `street`, przez co ten sam adres z GLEIF i z CEIDG miał
+    zupełnie inne kolumny i nie dawał się ani scalić, ani dopasować do punktu
+    adresowego PRG.
+    """
     entity = (record.get("attributes") or {}).get("entity") or {}
     address = entity.get("legalAddress") or {}
     city = address.get("city")
     if not city:
         return None
+
     lines = [line for line in (address.get("addressLines") or []) if line]
-    display = ", ".join([*lines, address.get("postalCode") or "", city]).replace(", ,", ",")
-    normalized = normalize_company_name(display).replace(" ", "")
+    building = (address.get("addressNumber") or "").strip() or None
+    unit = (address.get("addressNumberWithinBuilding") or "").strip() or None
+    street = street_from_address_line(lines[0], city=city, building=building) if lines else None
+
+    display = format_address(
+        street=street or "",
+        building=building or "",
+        unit=unit or "",
+        postal_code=address.get("postalCode") or "",
+        city=city,
+    )
+    normalized = address_natural_key(display)
     return ParsedEntity(
         entity_type=EntityType.ADDRESS,
-        display_name=display.strip(", "),
+        display_name=display,
         normalized_name=normalized,
         attributes={
             "city": city,
-            "street": lines[0] if lines else None,
+            "street": street,
+            "building": building,
+            "unit": unit,
             "postal_code": address.get("postalCode"),
             "country": address.get("country") or "PL",
         },

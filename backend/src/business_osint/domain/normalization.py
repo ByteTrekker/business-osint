@@ -131,6 +131,58 @@ def address_natural_key(raw: str) -> str:
     return _fold(raw).replace(" ", "")
 
 
+def format_address(*, street: str, building: str, unit: str, postal_code: str, city: str) -> str:
+    """Adres w zapisie polskim: `ul. Kąty 14/2, 34-443 Sromowce Wyżne`.
+
+    Przecinek oddziela wyłącznie ulicę od kodu pocztowego. Wcześniejsza wersja
+    wstawiała go między każdy człon („ul. Kąty, 14, 34-443, Sromowce Wyżne"),
+    co jest poprawne maszynowo, ale nie jest adresem, jaki ktokolwiek napisze.
+    """
+    line = street
+    if building:
+        line = f"{line} {building}".strip()
+        if unit:
+            line = f"{line}/{unit}"
+    elif unit:
+        line = f"{line} {unit}".strip()
+
+    locality = " ".join(part for part in (postal_code, city) if part)
+    return ", ".join(part for part in (line.strip(), locality) if part)
+
+
+def street_from_address_line(line: str, *, city: str, building: str | None) -> str:
+    """Wyciąga samą nazwę ulicy z jednoliniowego zapisu adresu.
+
+    Rejestry potrafią wpisać w jedno pole miejscowość, ulicę i numer:
+    GLEIF podaje `addressLines: ["PŁOCK BIELSKA 67"]` i dopiero obok, w polu
+    `addressNumber`, sam numer. Wrzucenie takiej linii do kolumny `street` —
+    co robiliśmy — powoduje, że ten sam adres z dwóch źródeł ma różne kolumny
+    i nie da się go ani scalić, ani dopasować do punktu adresowego.
+
+    Usuwamy to, co wiemy skądinąd: nazwę miejscowości i numer budynku. Reszta
+    jest ulicą. Świadomie nie zgadujemy niczego ponadto — linia, której nie da
+    się rozłożyć, wraca w całości, bo lepszy pełny zapis niż okrojony.
+
+    >>> street_from_address_line("PŁOCK BIELSKA 67", city="PŁOCK", building="67")
+    'BIELSKA'
+    >>> street_from_address_line("ul. Chemików 7", city="Płock", building="7")
+    'Chemików'
+    >>> street_from_address_line("Bielska", city="Płock", building=None)
+    'Bielska'
+    """
+    rest = line.strip()
+    if city and _fold(rest).startswith(_fold(city)):
+        rest = rest[len(city) :].strip(" ,")
+    rest = _STREET_PREFIX_RE.sub("", rest).strip()
+    if building:
+        # Numer bierzemy z końca: „Bielska 67" tak, ale „3 Maja 5" nie może
+        # stracić trójki z nazwy ulicy.
+        suffix = building.strip()
+        if rest.lower().endswith(suffix.lower()):
+            rest = rest[: -len(suffix)].strip(" ,/")
+    return rest or line.strip()
+
+
 def address_point_key(*, city: str, street: str, building: str) -> str:
     """Klucz dopasowania adresu do punktu adresowego z rejestru geodezyjnego.
 
