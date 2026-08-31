@@ -59,6 +59,16 @@ _DIGITS_RE = re.compile(r"\D+")
 _MANUAL_TRANSLIT = str.maketrans({"ł": "l", "Ł": "L", "ø": "o", "æ": "ae", "ß": "ss"})
 
 
+#: Rodzaj ulicy jest w polskich rejestrach zapisywany niekonsekwentnie: „ul.",
+#: „ul", „aleja", albo wcale. Nie niesie informacji odróżniającej adresy, więc
+#: przy dopasowaniu go usuwamy — inaczej „ul. Chemików" i „Chemików" byłyby
+#: dwoma różnymi ulicami.
+_STREET_PREFIX_RE = re.compile(
+    r"^(ul\.|ul\b|al\.|al\b|aleja|aleje|pl\.|plac|os\.|osiedle|rondo|skwer)\s*",
+    re.IGNORECASE,
+)
+
+
 def _fold(text: str) -> str:
     """Usuwa diakrytykę, sprowadza do lowercase, zostawia [a-z0-9 ]."""
     folded = text.translate(_MANUAL_TRANSLIT)
@@ -119,6 +129,33 @@ def address_natural_key(raw: str) -> str:
     True
     """
     return _fold(raw).replace(" ", "")
+
+
+def address_point_key(*, city: str, street: str, building: str) -> str:
+    """Klucz dopasowania adresu do punktu adresowego z rejestru geodezyjnego.
+
+    Osobna funkcja, a nie `address_natural_key` na sklejonym napisie, bo obie
+    strony dopasowania mają **kolumny**, nie zdania. PRG podaje miejscowość,
+    ulicę i numer w osobnych polach, my też — a napis, który by z nich powstał,
+    różniłby się interpunkcją po każdej ze stron i dopasowanie padłoby na czymś,
+    co nie jest różnicą w adresie.
+
+    Kolejność jest ustalona: miejscowość, ulica, numer. Numer bywa zapisany
+    z literą albo z ukośnikiem (`28a`, `14/2`) i to jest część adresu, więc
+    zostaje — znika tylko to, co nie niesie informacji.
+
+    >>> address_point_key(city="Płock", street="ul. Chemików", building="7")
+    'plock|chemikow|7'
+    >>> address_point_key(city="PŁOCK", street="Chemików", building="7")
+    'plock|chemikow|7'
+    """
+    return "|".join(
+        (
+            _fold(city),
+            _fold(_STREET_PREFIX_RE.sub("", street.strip())),
+            _fold(building).replace(" ", ""),
+        )
+    )
 
 
 def split_person_name(raw: str) -> tuple[str, str]:

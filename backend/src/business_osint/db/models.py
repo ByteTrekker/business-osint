@@ -21,6 +21,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -195,6 +196,44 @@ class Person(Base):
     )
 
 
+class AddressPoint(Base):
+    """Punkt adresowy z PRG — dane **referencyjne**, nie encja grafu.
+
+    Świadomie nie jest to `Entity`. Punkt adresowy nie jest podmiotem, z którym
+    ktokolwiek jest powiązany; to słownik współrzędnych, po którym dopasowujemy
+    adresy z rejestrów przedsiębiorców. Zrobienie z 7 mln punktów encji zalałoby
+    graf węzłami, które nie mają ani jednej krawędzi.
+
+    Alternatywą było geokodowanie przez Nominatim: przy limicie jednego zapytania
+    na sekundę 2,4 mln adresów to 28 dni odpytywania cudzej infrastruktury.
+    """
+
+    __tablename__ = "address_points"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: Klucz dopasowania: miejscowość|ulica|numer, znormalizowane po obu stronach.
+    match_key: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str | None] = mapped_column(String(128))
+    street: Mapped[str | None] = mapped_column(String(255))
+    building: Mapped[str | None] = mapped_column(String(32))
+    postal_code: Mapped[str | None] = mapped_column(String(16))
+    #: Identyfikatory urzędowe z rejestru — gmina (TERYT), miejscowość (SIMC),
+    #: ulica (ULIC). Twarde klucze administracyjne, których nie mamy z rejestrów
+    #: przedsiębiorców.
+    teryt: Mapped[str | None] = mapped_column(String(16))
+    simc: Mapped[str | None] = mapped_column(String(16))
+    ulic: Mapped[str | None] = mapped_column(String(16))
+    latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+
+    __table_args__ = (
+        # Dopasowanie idzie wyłącznie po tym kluczu i zawsze przez równość,
+        # więc btree; jeden adres może mieć w PRG kilka punktów (budynek
+        # z wieloma wejściami), dlatego bez unikalności.
+        Index("ix_address_points_match_key", "match_key"),
+    )
+
+
 class Address(Base):
     """Adres jako pełnoprawny węzeł grafu — pozwala pytać „kto jeszcze tu siedzi”."""
 
@@ -214,6 +253,12 @@ class Address(Base):
     normalized: Mapped[str] = mapped_column(Text, nullable=False)
     #: TERYT/ULIC, jeśli uda się dopasować do rejestru adresowego.
     teryt: Mapped[str | None] = mapped_column(String(16))
+    #: Klucz dopasowania do punktów adresowych PRG, liczony **w Pythonie** tą
+    #: samą funkcją co po stronie PRG. Trzymamy go w kolumnie zamiast liczyć
+    #: w zapytaniu, bo druga implementacja tej samej reguły rozjeżdża się przy
+    #: pierwszej zmianie normalizacji — i część adresów przestaje się dopasowywać
+    #: bez żadnego sygnału, że tak się stało.
+    match_key: Mapped[str | None] = mapped_column(Text)
     #: Współrzędne z geokodowania. Wyznaczane raz na adres i zapisywane —
     #: Nominatim dopuszcza jedno zapytanie na sekundę, więc geokodowanie przy
     #: każdym wyświetleniu byłoby nadużyciem cudzej usługi.
@@ -226,6 +271,7 @@ class Address(Base):
     __table_args__ = (
         UniqueConstraint("normalized", name="uq_addresses_normalized"),
         Index("ix_addresses_city", "city"),
+        Index("ix_addresses_match_key", "match_key"),
     )
 
 
