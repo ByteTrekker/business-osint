@@ -26,6 +26,10 @@ priorytetowi, nie chronologii.
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
 - [x] **„Kto jeszcze pod tym adresem"** — z paginacją i ostrzeżeniem przy
       adresach zbiorczych. Przyjmuje id podmiotu albo id adresu.
+- [x] **Scalanie zduplikowanych adresów** — 12 665 encji scalonych, krawędzie
+      przeniesione z zachowaniem N1 i N2, każde scalenie zapisane
+      w `entity_merges`. 258 grup pominiętych, bo to miejscowości o tej samej
+      nazwie w różnych województwach.
 - [x] **Stan rejestracji LEI** — wyciągnięty z już pobranych dokumentów, bez
       sieci. 15 424 spółek ma LEI oznaczony `LAPSED`; ta informacja leżała
       nieużywana. Historia nazwy z wygasłego rekordu dotyczy **14 spółek**,
@@ -78,11 +82,6 @@ priorytetowi, nie chronologii.
       niczego nie dowodzi (N4), więc scalenie i tak wymaga odpisu KRS jako
       źródła wspólnego identyfikatora. Prawdziwa liczba duplikatów jest większa,
       bo obejmuje też pary o różnym zapisie nazwy.
-- [ ] **Scalić 12 032 zduplikowane adresy.** Mappery już nie produkują nowych,
-      ale zastane wiersze zostają. Scalenie wymaga przeniesienia krawędzi przez
-      `entity_merges` z zachowaniem N1 i N2 — osobna, ostrożna zmiana. Uwaga:
-      272 pary są w **różnych województwach** i to nie są duplikaty, tylko
-      miejscowości o tej samej nazwie.
 - [ ] **Wyszukiwarka — reszta trzeciej tury.**
       - **filtr województwa** — `addresses.voivodeship` istnieje, ale prowadzi
         do niego krawędź `registered_at`, więc złączenie jest za drogie na

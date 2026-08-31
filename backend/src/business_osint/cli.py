@@ -105,6 +105,28 @@ def backfill_lei() -> None:
     typer.echo(f"Przetworzono {count:,} rekordów LEI.")
 
 
+@app.command("merge-addresses")
+def merge_addresses(
+    limit: int = typer.Option(0, help="Ile grup najwyżej scalić (0 = wszystkie)"),
+) -> None:
+    """Scala encje adresowe opisujące to samo miejsce.
+
+    Nic nie kasuje: krawędź do duplikatu jest zamykana w czasie systemowym,
+    a nowa — wskazująca ocalałego — dziedziczy jej pochodzenie. Każde scalenie
+    zostaje zapisane w `entity_merges` razem z uzasadnieniem.
+    """
+    from business_osint.etl.address_merge import MergeStats, merge_duplicate_addresses
+
+    def show(stats: MergeStats) -> None:
+        typer.echo(f"  grup: {stats.groups:,}, encji: {stats.merged_entities:,}\r", nl=False)
+
+    stats, report = asyncio.run(
+        _with_data_check(merge_duplicate_addresses(limit=limit or None, progress=show))
+    )
+    typer.echo(f"\nScalanie adresów: {stats.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(

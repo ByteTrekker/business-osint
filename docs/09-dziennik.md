@@ -12,6 +12,37 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Test scalił 12 665 encji w bazie produkcyjnej
+
+**Co się stało.** Test integracyjny scalania adresów wywołał
+`merge_duplicate_addresses()`. Ta funkcja otwiera własną sesję na **silniku
+ETL**, a więc na bazie `osint`, nie na testowej `osint_test`. Fixture
+`db_session` nie ma jak jej przechwycić. Test przeszedł przez całą produkcyjną
+bazę: **12 011 grup, 12 665 encji, 14 130 krawędzi.**
+
+**Stan po zdarzeniu.** Wszystkie siedem kontroli jakości przechodzi. N2 dalej
+pokazuje 733 krawędzie bez pochodzenia — dokładnie tyle co przed operacją,
+czyli pochodzenie przeniosło się poprawnie. Encje scalone nie trzymają
+aktywnych krawędzi. Każde scalenie ma wpis w `entity_merges` z uzasadnieniem,
+więc operacja jest odwracalna.
+
+**Dlaczego to jest poważne mimo poprawnego wyniku.** Operacja, którą dopiero
+pisałem, wykonała się na pełnych danych **zanim ktokolwiek o to poprosił**
+i zanim miała choć jeden przechodzący test. Skończyło się dobrze, ale to jest
+kwestia szczęścia, nie procesu: gdyby SQL przenoszący krawędzie miał błąd,
+dowiedziałbym się o tym po fakcie na 6,5 mln krawędzi.
+
+**To trzeci raz ta sama pułapka.** `recompute_degrees` i `run_checks` też
+otwierają własną sesję na silniku ETL; przy obu rozwiązałem to doraźnie —
+raz testem sterującym instrukcjami wprost, raz wariantem `execute_checks`
+przyjmującym sesję. Nie zapisałem reguły, więc trzeci raz wszedłem w to samo.
+
+**Reguła, teraz zapisana w CLAUDE.md.** Każda funkcja korzystająca
+z `get_etl_sessionmaker()` musi mieć wariant przyjmujący sesję, a testy wołają
+wyłącznie ten wariant. Tu jest nim `merge_batch`.
+
+---
+
 ## 2026-08-31 — Pobranie PRG przerwane na 94% przez limit, który sam ustawiłem
 
 **Co się stało.** `curl --max-time 5400` przerwał pobieranie po 90 minutach,
