@@ -33,6 +33,7 @@ from business_osint.domain.enums import SourceKind
 from business_osint.domain.normalization import (
     address_natural_key,
     address_search_key,
+    format_address,
     is_valid_nip,
     normalize_company_name,
     normalize_person_name,
@@ -136,25 +137,6 @@ class CeidgStats:
             "relationships": self.relationships,
             "errors": len(self.errors),
         }
-
-
-def format_address(*, street: str, building: str, unit: str, postal_code: str, city: str) -> str:
-    """Adres w zapisie polskim: `ul. Kąty 14/2, 34-443 Sromowce Wyżne`.
-
-    Przecinek oddziela wyłącznie ulicę od kodu pocztowego. Wcześniejsza wersja
-    wstawiała go między każdy człon („ul. Kąty, 14, 34-443, Sromowce Wyżne"),
-    co jest poprawne maszynowo, ale nie jest adresem, jaki ktokolwiek napisze.
-    """
-    line = street
-    if building:
-        line = f"{line} {building}".strip()
-        if unit:
-            line = f"{line}/{unit}"
-    elif unit:
-        line = f"{line} {unit}".strip()
-
-    locality = " ".join(part for part in (postal_code, city) if part)
-    return ", ".join(part for part in (line.strip(), locality) if part)
 
 
 def prepare_row(row: dict[str, Any], *, region: str = "") -> tuple[str, ...] | None:

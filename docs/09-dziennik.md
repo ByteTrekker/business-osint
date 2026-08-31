@@ -12,6 +12,53 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Adresy: to nie normalizacja się rozjechała, tylko kolumny
+
+**Trzy razy zmieniałem diagnozę, zanim napisałem kod.** Warto zapisać drogę,
+bo każdy kolejny pomiar unieważniał poprzedni wniosek.
+
+1. „ORLEN ma dwa adresy tej samej siedziby" — wygląda na rozjechaną
+   normalizację napisu.
+2. Zliczenie duplikatów po miejscowości, ulicy i numerze: **503 966 nadmiarowych
+   wierszy**. Liczba nieprawdziwa — klucz pomijał numer lokalu, więc scalał
+   różne mieszkania.
+3. Po dołożeniu lokalu: **12 967**, z czego 12 302 różnią się kodem pocztowym.
+   To wyglądało na „różne miejsca", więc prawie nic do naprawy.
+4. Obejrzenie próbki: **Agatówka ma dwa kody pocztowe dla tego samego budynku**
+   (37-450 i 37-464). Kod pocztowy nie należy do tożsamości adresu.
+5. I dopiero spojrzenie na trzy encje ORLEN-u pokazało prawdziwą przyczynę:
+   **kolumny znaczą co innego w każdym źródle.** GLEIF wrzucał całą linię
+   `PŁOCK BIELSKA 67` do `street` i zostawiał `building` puste, KRS zapisywał
+   `ul. Chemików` z przedrostkiem, CEIDG czysto.
+
+**Właściwa naprawa okazała się prostsza od wszystkich rozważanych.** GLEIF podaje
+numer budynku w osobnym polu `addressNumber` i numer lokalu w
+`addressNumberWithinBuilding` — nasz mapper po prostu ich nie czytał. Nie trzeba
+niczego zgadywać ani parsować heurystycznie.
+
+**Czego nie zrobiłem i dlaczego.** Nie scalam 12 032 istniejących duplikatów.
+To wymaga przeniesienia krawędzi przez `entity_merges` z zachowaniem N1 (fakty
+niezmienne) i N2 (pochodzenie przenosi się razem z krawędzią) — osobna zmiana,
+nie dopisek do poprawki mapperów. Dług jest policzony i pilnowany progiem
+w kontroli jakości: 12 033. naruszenie oznacza, że mappery znowu się rozjechały.
+
+**Sprostowanie.** Pisałem, że to blokuje PRG. Nie blokuje — dopasowanie do
+punktów adresowych idzie wiersz po wierszu, więc duplikaty po prostu dostaną
+współrzędne dwa razy. To poprawka jakości danych, nie warunek wstępny.
+
+**Dwie pułapki po drodze.**
+
+* Bramka mutacyjna złapała mnie natychmiast po tym, jak ją naprawiłem:
+  zaimportowałem `format_address` z `etl/ceidg_pipeline` do mappera GLEIF,
+  co wciągnęło warstwę bazy do piaskownicy mutmut. Funkcja jest czysta i jej
+  miejsce było w `domain/` od początku. Naprawa bramki zwróciła się w godzinę.
+* Ręczne zastosowanie mutacji do pliku, żeby sprawdzić, czy test ją wykrywa,
+  zostawiło **nieaktualny bajtkod**. Kolejne uruchomienie pokazywało wynik
+  zmutowany mimo przywróconego źródła, przez co przez chwilę uznałem poprawny
+  test za błędny. `find src -name __pycache__ -exec rm -rf` przed pomiarem.
+
+---
+
 ## 2026-08-31 — Szukanie po adresie: jedna wartość w dwóch sprzecznych rolach
 
 **Diagnoza z poprzedniej tury się potwierdziła.** Adres pełnił dwie role
