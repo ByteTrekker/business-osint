@@ -26,6 +26,16 @@ priorytetowi, nie chronologii.
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
 - [x] **„Kto jeszcze pod tym adresem"** — z paginacją i ostrzeżeniem przy
       adresach zbiorczych. Przyjmuje id podmiotu albo id adresu.
+- [x] **Zwijanie węzła osoby dla JDG** — 3 552 803 właścicieli ma dokładnie
+      jedną firmę, więc węzeł osoby powtarzał tylko jej nazwę. Zwijane po
+      stronie serwera, liczba w `meta`.
+- [x] **„Inne firmy tej osoby" — skreślone, nie odłożone.** Osoba fizyczna może
+      mieć w CEIDG jeden wpis; 18 właścicieli na 3,55 mln ma dwie firmy. To nie
+      brak danych, tylko prawo. Wróci, gdy będą spółki cywilne albo CRBR.
+- [x] **Scalanie zduplikowanych adresów** — 12 665 encji scalonych, krawędzie
+      przeniesione z zachowaniem N1 i N2, każde scalenie zapisane
+      w `entity_merges`. 258 grup pominiętych, bo to miejscowości o tej samej
+      nazwie w różnych województwach.
 - [x] **Stan rejestracji LEI** — wyciągnięty z już pobranych dokumentów, bez
       sieci. 15 424 spółek ma LEI oznaczony `LAPSED`; ta informacja leżała
       nieużywana. Historia nazwy z wygasłego rekordu dotyczy **14 spółek**,
@@ -78,11 +88,6 @@ priorytetowi, nie chronologii.
       niczego nie dowodzi (N4), więc scalenie i tak wymaga odpisu KRS jako
       źródła wspólnego identyfikatora. Prawdziwa liczba duplikatów jest większa,
       bo obejmuje też pary o różnym zapisie nazwy.
-- [ ] **Scalić 12 032 zduplikowane adresy.** Mappery już nie produkują nowych,
-      ale zastane wiersze zostają. Scalenie wymaga przeniesienia krawędzi przez
-      `entity_merges` z zachowaniem N1 i N2 — osobna, ostrożna zmiana. Uwaga:
-      272 pary są w **różnych województwach** i to nie są duplikaty, tylko
-      miejscowości o tej samej nazwie.
 - [ ] **Wyszukiwarka — reszta trzeciej tury.**
       - **filtr województwa** — `addresses.voivodeship` istnieje, ale prowadzi
         do niego krawędź `registered_at`, więc złączenie jest za drogie na
@@ -130,6 +135,13 @@ priorytetowi, nie chronologii.
       Dokładniejszy od Nominatima: dla adresu testowego różnica 75 m, bo PRG
       wskazuje punkt adresowy budynku, a Nominatim interpoluje wzdłuż ulicy.
 
+- [ ] **Spółki cywilne z CEIDG.** Raport „brak województwa" oznacza 3 328
+      wpisów jako „działalność prowadzona wyłącznie w formie spółki cywilnej".
+      To jedyna droga do prawdziwej warstwy powiązań między osobami w CEIDG —
+      dziś tego pola nie czytamy wcale.
+- [ ] **Napisać przy mapie, że 714 771 firm nie ma adresu.** To co piąty
+      przedsiębiorca; nie da się ich pokazać i mapa bez tej adnotacji wygląda
+      na kompletną.
 - [ ] **SUDOP** — pomoc publiczna i de minimis, na żądanie po NIP-ie.
       Aplikacja JSF bez API, ale ma eksport CSV.
 - [ ] **KRZ** — upadłości, restrukturyzacje, zakazy działalności, bezskuteczne
@@ -137,13 +149,6 @@ priorytetowi, nie chronologii.
 - [ ] **CEIDG `/firma/{id}`** — upadłości, zakazy, spółki cywilne, zarząd
       sukcesyjny. Pola są w API, nie ma ich w raportach zbiorczych.
 - [ ] Suwak `as_of` w interfejsie — API to obsługuje, UI nie wystawia
-- [ ] „Inne firmy tej osoby" — dla właścicieli JDG i wspólników. Analogiczne
-      do sąsiadów spod adresu, tylko po krawędzi `sole_proprietor_of`.
-- [ ] Zwijanie węzła osoby w węzeł firmy dla JDG — dziś graf pokazuje
-      „Jacek Gadomski → właściciel → Jacek Gadomski", co jest szumem
-
-## Zablokowane na zewnątrz
-
 - [ ] **REGON / GUS** — wniosek o bezpłatny klucz. Największy możliwy przyrost:
       z 3,6 mln do ~5 mln podmiotów plus adresy i PKD.
 - [ ] **KRS masowo** — art. 60a ustawy o KRS penalizuje nieuprawnione
