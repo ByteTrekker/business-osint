@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import { RelationshipGraph } from "@/components/RelationshipGraph";
+import { CompanyFacts } from "@/components/CompanyFacts";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
         ))}
         <span>{profile.degree} powiązań</span>
       </p>
+
+      <CompanyFacts profile={profile} />
 
       <section>
         <h2>Graf powiązań</h2>

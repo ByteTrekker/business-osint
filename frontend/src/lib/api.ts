@@ -73,6 +73,18 @@ export interface Relationship {
   provenance: Provenance[];
 }
 
+export interface FinancialReport {
+  period_from: string;
+  period_to: string;
+  revenue: number | null;
+  costs: number | null;
+  income: number | null;
+  loss: number | null;
+  tax_base: number | null;
+  tax_due: number | null;
+  currency: string;
+}
+
 export interface EntityProfile {
   id: string;
   type: EntityType;
@@ -82,6 +94,7 @@ export interface EntityProfile {
   company: Record<string, unknown> | null;
   person: Record<string, unknown> | null;
   address: Record<string, unknown> | null;
+  financials: FinancialReport[];
   updated_at: string | null;
 }
 
@@ -98,8 +111,10 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  search: (q: string) =>
-    get<{ query: string; hits: SearchHit[] }>(`/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, fuzzy = false) =>
+    get<{ query: string; hits: SearchHit[] }>(
+      `/search?q=${encodeURIComponent(q)}${fuzzy ? "&fuzzy=true" : ""}`,
+    ),
   entity: (id: string) => get<EntityProfile>(`/entities/${id}`),
   relationships: (id: string) => get<Relationship[]>(`/entities/${id}/relationships`),
   graph: (id: string, depth = 2, includeHistorical = false) =>
