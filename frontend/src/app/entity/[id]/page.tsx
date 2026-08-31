@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { counted } from "@/lib/plural";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import Pager from "@/components/Pager";
 import CoLocated from "@/components/CoLocated";
+import LeiRecords from "@/components/LeiRecords";
 import { RelationshipGraph } from "@/components/RelationshipGraph";
 import { CompanyFacts } from "@/components/CompanyFacts";
 import CompanyHistory from "@/components/CompanyHistory";
@@ -59,10 +61,14 @@ export default async function EntityPage({
             {identifier.scheme.toUpperCase()} {identifier.value}
           </span>
         ))}
-        <span>{profile.degree} powiązań</span>
+        <span>{counted(profile.degree, "powiązanie", "powiązania", "powiązań")}</span>
       </p>
 
       <CompanyFacts profile={profile} />
+      <LeiRecords
+        attributes={(profile.company?.attributes as Record<string, unknown> | undefined) ?? null}
+        currentName={profile.name}
+      />
       <CompanyHistory
         attributes={(profile.company?.attributes as Record<string, unknown> | undefined) ?? null}
       />
@@ -74,7 +80,7 @@ export default async function EntityPage({
       </section>
 
       <section>
-        <h2>Powiązania ({relationships?.meta.total ?? 0})</h2>
+        <h2>{counted(relationships?.meta.total ?? 0, "Powiązanie", "Powiązania", "Powiązań")}</h2>
         <table className="rels">
           <thead>
             <tr>
