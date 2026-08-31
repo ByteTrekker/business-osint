@@ -24,6 +24,9 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **KRS jako wzbogacanie na żądanie** — `enrich-krs`, endpoint
+      `POST /entities/{id}/enrich/krs`, czas życia odpisu 30 dni, historia nazw
+      i kapitału w interfejsie. Historia była wcześniej liczona i wyrzucana.
 - [x] **Kontrole danych wpięte w bramki i w ETL** — `make data-check`,
       `make check-db`, plus werdykt po każdym imporcie. Przy okazji naprawiony
       `make test-integration`, który szedł przez Dockera i nie wykonał się nigdy.
@@ -68,9 +71,31 @@ priorytetowi, nie chronologii.
 
 ## Do zrobienia — funkcje
 
-- [ ] **KRS jako wzbogacanie na żądanie** + mechanizm TTL. Mapper gotowy
-      i przetestowany: daje 25 lat datowanej historii — nazwy, siedziby, kapitał,
-      każda zmiana z numerem i datą wpisu. To jedyne źródło prawdziwej historii.
+- [ ] **Paginacja.** Dziś API zwraca `limit` i nic poza tym — nie ma jak
+      poprosić o kolejną stronę ani dowiedzieć się, ile wyników w ogóle jest.
+      Dotyczy trzech miejsc:
+      - **wyniki wyszukiwania** — „ORLEN" ma w bazie 25 dopasowań, widać 20
+      - **powiązania na profilu** — tabela jest ucinana bez zapowiedzi
+      - **lista firm pod adresem** i **firm osoby**, gdy powstaną
+      Uwaga na kształt: `OFFSET` przy dużych przesunięciach czyta i odrzuca
+      wszystkie wcześniejsze wiersze, a wyszukiwarka jest etapowa — numer strony
+      nie ma tu prostego znaczenia. Do rozważenia kursor po `(score, id)`
+      zamiast numeru strony. Musi też trafić do `meta`, bo niezmiennik N3 mówi,
+      że przycięcie wyniku jest częścią kontraktu, a nie cichą decyzją.
+
+- [ ] **Wyszukiwarka — druga tura.** Ranking jest naprawiony, ale zostało:
+      - **kolejność słów** — „PKN ORLEN" trafia dopiero trigramem (209 ms),
+        bo nie jest prefiksem żadnej nazwy. Dopasowanie po zbiorze słów
+        rozwiązałoby to w milisekundach.
+      - **filtry** — typ podmiotu, województwo, status, PKD. Mamy te kolumny
+        i ani jednego sposobu, żeby po nich zawęzić.
+      - **wyszukiwanie po adresie** — dziś nie da się znaleźć „Chemików 7,
+        Płock", choć adresy są encjami z własnymi nazwami.
+      - **podpowiedzi w trakcie pisania** — etap prefiksowy kosztuje 0,3 ms,
+        więc stać nas na to bez dodatkowej infrastruktury.
+      - **„czy chodziło o…"** przy zerowym wyniku — trigram już liczy
+        podobieństwo, tylko go nie pokazujemy.
+
 - [ ] **Mapa zbiorcza podmiotów** z grupowaniem znaczników.
       - klastrowanie po stronie serwera: agregacja po siatce zależnej od poziomu
         przybliżenia, zwracamy liczności zamiast punktów — 2,4 mln znaczników

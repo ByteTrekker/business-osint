@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import { RelationshipGraph } from "@/components/RelationshipGraph";
 import { CompanyFacts } from "@/components/CompanyFacts";
+import CompanyHistory from "@/components/CompanyHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,9 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
       </p>
 
       <CompanyFacts profile={profile} />
+      <CompanyHistory
+        attributes={(profile.company?.attributes as Record<string, unknown> | undefined) ?? null}
+      />
 
       <section>
         <h2>Graf powiązań</h2>

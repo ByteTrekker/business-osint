@@ -199,6 +199,34 @@ def import_cit(
     _echo_data_check(report)
 
 
+@app.command("enrich-krs")
+def enrich_krs(
+    krs: str = typer.Argument("", help="Numer KRS; pusty = nadrób zaległości"),
+    limit: int = typer.Option(25, help="Ile podmiotów przy nadrabianiu zaległości"),
+    force: bool = typer.Option(False, "--force", help="Pobierz mimo świeżego odpisu"),
+) -> None:
+    """Wzbogaca podmioty odpisem pełnym z KRS — jedyne źródło datowanej historii.
+
+    Bez argumentu nadrabia zaległości: bierze podmioty z numerem KRS, dla których
+    nie mamy jeszcze żadnego odpisu, w kolejności od najbardziej powiązanych.
+    Świadomie sekwencyjnie i z limitem — to nie jest przemiatanie rejestru,
+    a granica z art. 60a ustawy o KRS jest niejasna.
+    """
+    from business_osint.etl.krs_enrichment import EnrichmentResult, enrich_missing, enrich_one
+
+    def show(result: EnrichmentResult) -> None:
+        stan = result.error or result.skipped_reason or f"historia: {result.history_entries}"
+        typer.echo(f"  {result.krs}  {stan}")
+
+    if krs:
+        result, report = asyncio.run(_with_data_check(enrich_one(krs, force=force)))
+        typer.echo(f"KRS {krs}: {result.as_dict()}")
+    else:
+        batch, report = asyncio.run(_with_data_check(enrich_missing(limit=limit, progress=show)))
+        typer.echo(f"\nKRS: {batch.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("import-ceidg")
 def import_ceidg(
     region: str = typer.Option("", help="Tylko jedno województwo (pusty = wszystkie)"),

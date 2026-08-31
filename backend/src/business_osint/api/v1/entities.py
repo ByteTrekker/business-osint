@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -87,3 +87,22 @@ async def get_location(session: SessionDep, entity_id: uuid.UUID) -> LocationOut
     if location is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie udało się ustalić lokalizacji")
     return LocationOut(**location)
+
+
+@router.post(
+    "/{entity_id}/enrich/krs",
+    summary="Dociąga odpis KRS, jeśli jest starszy niż czas życia",
+)
+async def enrich_krs(entity_id: uuid.UUID, force: bool = False) -> dict[str, Any]:
+    """Wzbogaca podmiot odpisem pełnym z KRS.
+
+    Metoda POST, bo to **skutek uboczny**: pobranie z rejestru i zapis do bazy.
+    GET, który po cichu odpytuje ministerstwo, byłby kłamstwem wobec każdego
+    pośrednika, który uzna go za bezpieczny do powtórzenia.
+
+    Nie zwraca błędu HTTP przy awarii rejestru. Wzbogacanie jest dodatkiem do
+    profilu, który i tak się wyświetli — status pobrania wraca w treści.
+    """
+    from business_osint.etl.krs_enrichment import enrich_entity
+
+    return (await enrich_entity(entity_id, force=force)).as_dict()
