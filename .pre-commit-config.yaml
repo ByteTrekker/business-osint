@@ -1,0 +1,37 @@
+# Lokalna bramka uruchamiana przy commicie: `pre-commit install`.
+# Świadomie jest węższa niż CI — ma być szybka. Pełny zestaw: `make check`.
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      # Klucz prywatny w repozytorium OSINT-owym to incydent, nie literówka.
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: conventional-commit
+        name: Conventional Commits (angielski)
+        entry: scripts/check-commit-msg.sh
+        language: script
+        stages: [commit-msg]

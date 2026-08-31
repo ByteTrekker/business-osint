@@ -1,0 +1,60 @@
+name: business-osint
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: osint
+      POSTGRES_PASSWORD: osint
+      POSTGRES_DB: osint
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osint -d osint"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    command:
+      # Ustawienia pod obciążenie grafowe: dużo losowych odczytów po indeksach.
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_cache_size=2GB
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      BUSINESS_OSINT_DATABASE_URL: postgresql+asyncpg://osint:osint@db:5432/osint
+      BUSINESS_OSINT_DEBUG: "true"
+      BUSINESS_OSINT_CORS_ORIGINS: '["http://localhost:3000"]'
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn business_osint.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  web:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports: ["3000:3000"]
+    depends_on: [api]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  pgdata:
