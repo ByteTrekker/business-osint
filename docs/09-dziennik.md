@@ -43,14 +43,19 @@ czyli obietnicy, na której stoi cały produkt. Rozkład:
 | typ krawędzi | wszystkie | bez źródła | źródło |
 |---|---:|---:|---|
 | `sole_proprietor_of` | 3 552 790 | 3 552 790 | CEIDG |
-| `registered_at` | 2 892 240 | 2 839 892 | CEIDG (GLEIF ma) |
-| `parent_of` | 21 306 | 21 306 | GLEIF |
-| `contractor_of` | 123 | 123 | BZP |
+| `registered_at` | 2 892 240 | 2 839 892 | CEIDG |
+| `parent_of` | 21 306 | **0** | GLEIF |
+| `contractor_of` | 123 | **0** | BZP |
 
-Import masowy CEIDG pisze relacje zbiorczym SQL-em i nigdy nie dotyka
-`relationship_sources`. Import GLEIF pomija to samo przy krawędziach
-właścicielskich. W bazie jest 341 dokumentów źródłowych i 77 004 wpisy
-pochodzenia na 6,47 mln krawędzi.
+**Sprostowanie do pierwszej wersji tego wpisu.** Napisałem, że GLEIF i BZP
+pomijają pochodzenie tak samo jak CEIDG. To była nieprawda — źle odczytałem
+kolumny w zapytaniu diagnostycznym. GLEIF i BZP zapisują pochodzenie komplet,
+przez `load_document`. Cały defekt siedzi w imporcie masowym CEIDG, który pisze
+relacje zbiorczym SQL-em i nigdy nie dotyka `relationship_sources`. Zostawiam
+pomyłkę w zapisie, bo wysłałaby kogoś do naprawiania kodu, który działa.
+
+W bazie jest 341 dokumentów źródłowych i 77 004 wpisy pochodzenia na 6,47 mln
+krawędzi.
 
 **Co z tego wynika.** To nie jest usterka kosmetyczna. Bez pochodzenia nie da
 się ani zweryfikować twierdzenia, ani obronić go przed osobą, której dotyczy —
