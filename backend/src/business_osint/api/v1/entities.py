@@ -12,7 +12,9 @@ from business_osint.schemas.entity import (
     FinancialReportOut,
     IdentifierOut,
     LocationOut,
+    PageMeta,
     RelationshipOut,
+    RelationshipPageOut,
 )
 
 router = APIRouter(prefix="/entities", tags=["entities"])
@@ -40,7 +42,7 @@ async def get_entity(session: SessionDep, entity_id: uuid.UUID) -> EntityProfile
 
 @router.get(
     "/{entity_id}/relationships",
-    response_model=list[RelationshipOut],
+    response_model=RelationshipPageOut,
     summary="Powiązania podmiotu wraz ze źródłem każdej informacji",
 )
 async def get_relationships(
@@ -50,11 +52,14 @@ async def get_relationships(
         bool, Query(description="Pokaż też zakończone powiązania")
     ] = True,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
-) -> list[RelationshipOut]:
-    rows = await EntityRepository(session).relationships(
-        entity_id, include_historical=include_historical, limit=limit
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> RelationshipPageOut:
+    repo = EntityRepository(session)
+    total = await repo.count_relationships(entity_id, include_historical=include_historical)
+    rows = await repo.relationships(
+        entity_id, include_historical=include_historical, limit=limit, offset=offset
     )
-    return [
+    items = [
         RelationshipOut(
             id=row["relationship_id"],
             direction=row["direction"],
@@ -71,6 +76,16 @@ async def get_relationships(
         )
         for row in rows
     ]
+    return RelationshipPageOut(
+        items=items,
+        meta=PageMeta(
+            limit=limit,
+            offset=offset,
+            returned=len(items),
+            has_more=offset + len(items) < total,
+            total=total,
+        ),
+    )
 
 
 @router.get(
