@@ -89,6 +89,38 @@ def normalize_person_name(raw: str) -> str:
     return _fold(raw)
 
 
+def address_search_key(raw: str) -> str:
+    """Adres w postaci, po której da się **szukać** — z zachowanymi granicami słów.
+
+    Adres pełni w tym systemie dwie różne role i przez długi czas dzielił dla
+    obu jedną wartość, co uniemożliwiało wyszukiwanie:
+
+    * **klucz naturalny** (`addresses.normalized`) służy do scalania i musi być
+      sklejony w jeden ciąg, żeby „ul. Chemików 7" i „Chemików 7" trafiły w ten
+      sam wiersz. Robi to `address_natural_key`.
+    * **pole wyszukiwania** (`entities.normalized_name`) musi mieć spacje, bo
+      indeks pełnotekstowy dzieli po słowach. Bez nich cały adres jest jednym
+      tokenem i zapytanie „chemikow plock" nie ma czego dopasować.
+
+    >>> address_search_key("Chemików 7, 09-411 Płock")
+    'chemikow 7 09 411 plock'
+    """
+    return _fold(raw)
+
+
+def address_natural_key(raw: str) -> str:
+    """Adres jako klucz scalania — bez spacji, bo różnice w zapisie mają zniknąć.
+
+    >>> address_natural_key("ul. Chemików 7, 09-411 Płock")
+    'ulchemikow709411plock'
+    >>> address_natural_key("Chemików 7, 09-411, Płock") == address_natural_key(
+    ...     "Chemików 7, 09-411 Płock"
+    ... )
+    True
+    """
+    return _fold(raw).replace(" ", "")
+
+
 def split_person_name(raw: str) -> tuple[str, str]:
     """Rozdziela 'KOWALSKI JAN ANDRZEJ' / 'Jan Kowalski' na (imiona, nazwisko).
 

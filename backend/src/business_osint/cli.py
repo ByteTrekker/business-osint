@@ -70,6 +70,23 @@ def refresh_degrees() -> None:
     typer.echo(f"Zaktualizowano {count} encji.")
 
 
+@app.command("resplit-addresses")
+def resplit_addresses() -> None:
+    """Przepisuje nazwy encji adresowych na postać wyszukiwalną.
+
+    Jednorazowa naprawa danych zaimportowanych, zanim adres dostał osobne pole
+    wyszukiwania. Bez niej szukanie po adresie nie działa dla nic sprzed tej
+    zmiany, bo cały adres jest jednym tokenem indeksu pełnotekstowego.
+    """
+    from business_osint.etl.maintenance import resplit_address_names
+
+    def show(done: int) -> None:
+        typer.echo(f"  przepisano: {done:,}\r", nl=False)
+
+    count = asyncio.run(resplit_address_names(progress=show))
+    typer.echo(f"Przepisano {count:,} adresów.")
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(

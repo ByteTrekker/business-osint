@@ -12,6 +12,49 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Szukanie po adresie: jedna wartość w dwóch sprzecznych rolach
+
+**Diagnoza z poprzedniej tury się potwierdziła.** Adres pełnił dwie role
+i dzielił dla nich jedną wartość:
+
+* **klucz scalania** musi być sklejony, żeby „ul. Chemików 7" i „Chemików 7"
+  trafiły w ten sam wiersz;
+* **pole wyszukiwania** musi mieć spacje, bo indeks pełnotekstowy dzieli po
+  słowach.
+
+Te wymagania są sprzeczne, więc jedna wartość nie mogła spełnić obu. Wygrał
+klucz scalania i przez to adresu nie dało się wyszukać **w ogóle**.
+
+**Decyzja.** Dwie nazwane funkcje domenowe zamiast jednej: `address_natural_key`
+(sklejony, do `addresses.normalized`) i `address_search_key` (ze spacjami, do
+`entities.normalized_name`). Osobny test pilnuje, żeby ktoś ich nie „uprościł"
+z powrotem do jednej — bo wyglądają na duplikat, a nie są.
+
+**Naprawa 2,4 mln wierszy — w Pythonie, nie w SQL-u.** Napisałem najpierw
+wersję z `regexp_replace` i `translate` w SQL-u i ją wyrzuciłem: druga
+implementacja tej samej reguły rozjechałaby się z pierwszą przy najbliższej
+zmianie normalizacji, a wtedy część adresów byłaby wyszukiwalna inaczej niż
+reszta, bez żadnego sygnału. Partiami po 20 tys., z użyciem funkcji domenowej.
+
+**Pętla nieskończona, którą złapałem przed uruchomieniem.** Pierwsza wersja
+wybierała partie warunkiem „nazwa bez spacji" — wygląda naturalnie i nigdy się
+nie kończy: adres jednowyrazowy po przeliczeniu **nadal** nie ma spacji, więc
+wracałby w każdej kolejnej partii. Postęp śledzi teraz kursor po `id`.
+Po naprawie 216 z 2 421 739 adresów nadal nie ma spacji i to jest poprawne —
+to nazwy jednowyrazowe.
+
+**Usunięte kruche złączenie.** Import CEIDG łączył encję adresu z wierszem po
+`entities.normalized_name = address_normalized`. Działało wyłącznie dopóki oba
+pola trzymały tę samą wartość, czyli dokładnie dopóki istniał opisywany defekt.
+Identyfikator adresu wędruje teraz przez tabelę pomocniczą, tak samo jak
+identyfikatory firmy i właściciela.
+
+**Wynik na prawdziwych danych.** „chemikow plock" → 6 ms, „konrada leczkowa
+gdansk" → 17 ms, „plock chemikow" → 4 ms. Wcześniej: zero wyników, niezależnie
+od zapytania.
+
+---
+
 ## 2026-08-31 — Wyszukiwarka, druga tura
 
 **Kolejność słów.** „termika orlen" nie trafiało w ORLEN TERMIKA, bo żaden etap
