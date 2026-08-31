@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_osint.domain.enums import DERIVED_RELATIONSHIP_TYPES
 from business_osint.domain.graph_budget import ExpansionState, GraphBudget
+from business_osint.domain.graph_shape import redundant_sole_trader_nodes
 
 _LEVEL_SQL = text(
     """
@@ -125,6 +126,8 @@ class Neighborhood:
     edges: list[GraphEdge] = field(default_factory=list)
     truncated: bool = False
     suppressed_hubs: int = 0
+    #: Ile węzłów osób zwinięto w ich jednoosobowe działalności.
+    collapsed_sole_traders: int = 0
 
     @property
     def stats(self) -> dict[str, int | bool]:
@@ -133,7 +136,26 @@ class Neighborhood:
             "edge_count": len(self.edges),
             "truncated": self.truncated,
             "suppressed_hubs": self.suppressed_hubs,
+            "collapsed_sole_traders": self.collapsed_sole_traders,
         }
+
+    def collapse_sole_traders(self) -> None:
+        """Usuwa z wyniku węzły osób, które powtarzają nazwę swojej JDG.
+
+        Liczba zwiniętych trafia do `stats`, tak samo jak stłumione huby.
+        Zniknięcie węzła z grafu bez śladu w metadanych byłoby cichym
+        przycięciem wyniku, czyli tym, czego zabrania niezmiennik N3.
+        """
+        collapsed = redundant_sole_trader_nodes(self.nodes, self.edges, root_id=self.root_id)
+        if not collapsed:
+            return
+        self.nodes = [node for node in self.nodes if node.id not in collapsed]
+        self.edges = [
+            edge
+            for edge in self.edges
+            if edge.source_id not in collapsed and edge.target_id not in collapsed
+        ]
+        self.collapsed_sole_traders = len(collapsed)
 
 
 class GraphRepository:
@@ -219,6 +241,9 @@ class GraphRepository:
 
         result.truncated = state.truncated
         result.suppressed_hubs = state.suppressed_hubs
+        # Zwijamy dopiero na końcu: w trakcie przechodzenia węzeł osoby jest
+        # potrzebny, bo to przez niego biegnie krawędź do firmy.
+        result.collapse_sole_traders()
         return result
 
     @staticmethod
