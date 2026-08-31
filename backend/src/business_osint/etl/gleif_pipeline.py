@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from business_osint.db.session import get_sessionmaker
+from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import SourceKind
 from business_osint.etl.loaders import load_document, store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
@@ -51,7 +51,7 @@ async def import_lei_records(
     """Pobiera rekordy LEI dla kraju i ładuje je do bazy."""
     stats = GleifImportStats()
     client = GleifClient()
-    factory = get_sessionmaker()
+    factory = get_etl_sessionmaker()
     try:
         async for document in client.iter_lei_records(country=country, max_pages=max_pages):
             async with factory() as session, session.begin():
@@ -115,7 +115,7 @@ async def import_relationships(
             payload = response.content
 
     rows = _read_csv_zip(payload)
-    factory = get_sessionmaker()
+    factory = get_etl_sessionmaker()
 
     async with factory() as session, session.begin():
         known = await _known_leis(session) if only_known_leis else None
@@ -197,7 +197,7 @@ async def import_missing_counterparties(*, local_path: str | None = None) -> Gle
     stats = GleifImportStats()
     rows = await _read_relationship_rows(local_path)
 
-    factory = get_sessionmaker()
+    factory = get_etl_sessionmaker()
     async with factory() as session:
         known = await _known_leis(session)
 

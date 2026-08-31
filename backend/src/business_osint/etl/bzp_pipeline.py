@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from business_osint.db.session import get_sessionmaker
+from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import SourceKind
 from business_osint.etl.loaders import load_document, store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
@@ -34,7 +34,7 @@ class BzpStats:
 async def import_notices(*, days_back: int = 30, progress: Any = None) -> BzpStats:
     stats = BzpStats()
     client = BzpClient()
-    factory = get_sessionmaker()
+    factory = get_etl_sessionmaker()
     try:
         async for document in client.iter_notices(days_back=days_back):
             async with factory() as session, session.begin():

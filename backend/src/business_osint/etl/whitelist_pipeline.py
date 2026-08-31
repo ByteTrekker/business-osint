@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from business_osint.db.models import EntityIdentifier
-from business_osint.db.session import get_sessionmaker
+from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import IdentifierScheme, SourceKind
 from business_osint.domain.normalization import is_valid_krs, is_valid_regon
 from business_osint.etl.fetching.errors import FetchError
@@ -49,7 +49,7 @@ class WhitelistStats:
 async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) -> WhitelistStats:
     """Dla każdego znanego NIP-u dopina REGON i KRS z białej listy."""
     stats = WhitelistStats()
-    factory = get_sessionmaker()
+    factory = get_etl_sessionmaker()
     date = dt.date.today().isoformat()
 
     async with factory() as session:

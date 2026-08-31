@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_osint.db.models import IngestionRun, Source
-from business_osint.db.session import get_sessionmaker
+from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import SourceKind
 from business_osint.etl.loaders import load_document, store_raw_document
 from business_osint.etl.sources.krs_api import KrsClient
@@ -41,7 +41,7 @@ async def ingest_single_krs(krs: str, *, registry: str = "P") -> dict[str, Any]:
     finally:
         await client.aclose()
 
-    async with get_sessionmaker()() as session, session.begin():
+    async with get_etl_sessionmaker()() as session, session.begin():
         source_id = await get_or_create_source(
             session, SourceKind.KRS, "api-krs.ms.gov.pl", "https://api-krs.ms.gov.pl"
         )

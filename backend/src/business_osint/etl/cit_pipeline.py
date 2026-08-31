@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from business_osint.db.models import FinancialReport
-from business_osint.db.session import get_sessionmaker
+from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import EntityType, IdentifierScheme, SourceKind
 from business_osint.domain.normalization import normalize_company_name
 from business_osint.etl.loaders import EntityResolver, LoadStats, store_raw_document
@@ -48,7 +48,7 @@ async def import_cit_file(path: str, *, dataset: str, url: str | None = None) ->
     # asynchroniczny dostęp do plików nie jest tu wart dodatkowej zależności.
     digest = hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()  # noqa: ASYNC240
 
-    factory = get_sessionmaker()
+    factory = get_etl_sessionmaker()
     async with factory() as session, session.begin():
         source_id = await get_or_create_source(
             session, SourceKind.MANUAL, "wykaz CIT (art. 27b)", "https://www.gov.pl/web/finanse"
