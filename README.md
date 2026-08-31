@@ -107,6 +107,7 @@ ich rewizji opisuje [docs/adr/](docs/adr/).
 | [docs/03-prawo-i-ryzyko.md](docs/03-prawo-i-ryzyko.md) | RODO, prawo do bycia zapomnianym, ryzyko sprostowań |
 | [docs/05-strategia-wielojezykowa.md](docs/05-strategia-wielojezykowa.md) | kiedy i które komponenty przechodzą na Rust/Go — progi, nie daty |
 | [docs/08-lista-zadan.md](docs/08-lista-zadan.md) | co zrobione, co pilne, co zablokowane i na kim |
+| [docs/09-dziennik.md](docs/09-dziennik.md) | co zrobiono i z czego to wynikło — droga, nie lista zmian |
 | [CLAUDE.md](CLAUDE.md) | instrukcje dla Claude Code: niezmienniki, konwencje, czego nie proponować |
 | [docs/06-jakosc-kodu.md](docs/06-jakosc-kodu.md) | pipeline jakości — co sprawdzamy, dlaczego i jak uruchomić lokalnie |
 | [docs/07-pobieranie-danych.md](docs/07-pobieranie-danych.md) | odporność pobierania, koszt źródeł, przyrostowość, granice Pythona |

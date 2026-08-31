@@ -24,6 +24,9 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **Asercje jakości danych** — `check-data`, siedem kontroli, każda
+      wywiedziona z realnej awarii. Pierwsze uruchomienie wykryło złamanie N2
+      na 98,9% grafu.
 - [x] **Fixture KRS zastąpiony prawdziwym odpisem** — poprzedni opisywał
       schemat wymyślony, z niezamaskowanymi nazwiskami i `naglowekA` w złym
       miejscu. Testy przechodziły, opisując API, które nie istnieje.
@@ -32,6 +35,14 @@ priorytetowi, nie chronologii.
 
 - [ ] **Bramki jakości i commit.** Od importu CEIDG nazbierało się bardzo dużo
       niezacommitowanego kodu. To największe bieżące ryzyko w projekcie.
+- [ ] **Naprawić pochodzenie krawędzi (N2).** Kontrole jakości pokazały, że
+      **6 392 682 z 6 466 459 krawędzi nie ma wpisu w `relationship_sources`** —
+      98,9% grafu. Import masowy CEIDG pisze relacje zbiorczym SQL-em i nigdy nie
+      dotyka tabeli pochodzenia; GLEIF pomija to samo przy `parent_of`, BZP przy
+      `contractor_of`. W bazie leży 341 dokumentów źródłowych i 77 004 wpisy
+      pochodzenia. Bez tego nie da się ani zweryfikować twierdzenia, ani obronić
+      go przed osobą, której dotyczy. Do zrobienia razem z reimportem CEIDG.
+
 - [ ] **Reimport CEIDG** — poprawiony format adresu (`ul. Kąty 14, 34-443
       Sromowce Wyżne` zamiast członów rozdzielonych przecinkami) oraz zapis
       numeru budynku i lokalu do osobnych kolumn. Około 40 minut.
