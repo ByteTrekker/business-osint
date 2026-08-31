@@ -30,6 +30,22 @@ def refresh_degrees() -> None:
     typer.echo(f"Zaktualizowano {count} encji.")
 
 
+@app.command("check-data")
+def check_data(
+    deep: bool = typer.Option(
+        False, "--deep", help="Dołącz kontrole pełnoprzeglądowe (wolne, minuty)"
+    ),
+) -> None:
+    """Sprawdza niezmienniki na danych. Kod wyjścia 1, gdy któraś kontrola padnie."""
+    from business_osint.etl.quality import format_report, run_checks
+
+    report = asyncio.run(run_checks(deep=deep))
+    for line in format_report(report):
+        typer.echo(line)
+    if not report.ok:
+        raise typer.Exit(code=1)
+
+
 @app.command("ingest-krs")
 def ingest_krs(
     krs: str = typer.Argument(..., help="Numer KRS, np. 0000006865"),
