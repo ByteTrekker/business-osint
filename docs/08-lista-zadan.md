@@ -24,6 +24,14 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **Bramki, commity i push** — 10 commitów w PR #2, stos PR #2 → #3 → #4.
+- [x] **Reimport CEIDG z naprawą pochodzenia** — krawędzie bez źródła
+      6 392 682 → 733, adresy z numerem budynku 0 → 2 373 660, zero skasowanych
+      wierszy. Pozostałe 733 to dług z importu sprzed wprowadzenia pochodzenia,
+      którego raport źródłowy już nie istnieje; kontrola ma na to opisany próg.
+- [x] **Zbadane 22 encje z dwoma LEI-ami** — scalanie było poprawne, kontrola
+      za szeroka. GLEIF wystawia rekordy `DUPLICATE` i `LAPSED`, więc jedna
+      spółka legalnie nosi dwa LEI-e przy jednym KRS-ie.
 - [x] **Asercje jakości danych** — `check-data`, siedem kontroli, każda
       wywiedziona z realnej awarii. Pierwsze uruchomienie wykryło złamanie N2
       na 98,9% grafu.
@@ -33,19 +41,8 @@ priorytetowi, nie chronologii.
 
 ## Do zrobienia — pilne
 
-- [ ] **Bramki jakości i commit.** Od importu CEIDG nazbierało się bardzo dużo
-      niezacommitowanego kodu. To największe bieżące ryzyko w projekcie.
-- [ ] **Naprawić pochodzenie krawędzi (N2).** Kontrole jakości pokazały, że
-      **6 392 682 z 6 466 459 krawędzi nie ma wpisu w `relationship_sources`** —
-      98,9% grafu. Import masowy CEIDG pisze relacje zbiorczym SQL-em i nigdy nie
-      dotyka tabeli pochodzenia; GLEIF pomija to samo przy `parent_of`, BZP przy
-      `contractor_of`. W bazie leży 341 dokumentów źródłowych i 77 004 wpisy
-      pochodzenia. Bez tego nie da się ani zweryfikować twierdzenia, ani obronić
-      go przed osobą, której dotyczy. Do zrobienia razem z reimportem CEIDG.
-
-- [ ] **Reimport CEIDG** — poprawiony format adresu (`ul. Kąty 14, 34-443
-      Sromowce Wyżne` zamiast członów rozdzielonych przecinkami) oraz zapis
-      numeru budynku i lokalu do osobnych kolumn. Około 40 minut.
+- [ ] **Wpiąć `check-data` w bramki** — teraz, gdy wszystkie kontrole
+      przechodzą. Wymaga bazy, więc obok `make test-integration`, nie w `make check`.
 
 ## Znalezione przy okazji
 
@@ -62,6 +59,11 @@ priorytetowi, nie chronologii.
       źródła wspólnego identyfikatora. Prawdziwa liczba duplikatów jest większa,
       bo obejmuje też pary o różnym zapisie nazwy.
 - [ ] „1 powiązań" — liczebnik nieodmieniony w liście wyników i na profilu.
+- [ ] **Historia nazwy z wygasłego LEI.** Rekord `LAPSED` w GLEIF nosi dawną
+      nazwę spółki (AVNET → TD SYNNEX AS POLAND). Mamy te dane i ich nie
+      wykorzystujemy, a to darmowa historia nazw dla podmiotów z GLEIF.
+- [ ] **Status rejestracji LEI w interfejsie** — przy dwóch LEI-ach nie widać,
+      który jest bieżący, a który zduplikowany albo wygasły.
 
 ## Do zrobienia — funkcje
 

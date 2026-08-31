@@ -89,6 +89,25 @@ async def test_one_tax_number_per_entity_passes(db_session) -> None:
     assert await _violations(db_session, "entity_holds_one_identifier_per_scheme") == 0
 
 
+async def test_two_lei_codes_on_one_entity_are_not_a_violation(db_session) -> None:
+    """Dwa LEI-e na jednej spółce to stan normalny, nie błąd scalania.
+
+    GLEIF wystawia rekordy zduplikowane i wygasłe. Sprawdzone na 22 przypadkach
+    z naszej bazy: każdy ma **jeden** KRS i dwa LEI-e. P.S. TRADING ma jeden
+    rekord oznaczony przez GLEIF wprost jako `DUPLICATE`; AVNET ma jeden
+    `LAPSED` pod dawną nazwą i jeden `ISSUED` pod obecną (TD SYNNEX).
+    Scalenie po KRS-ie było poprawne — to kontrola była za szeroka.
+    """
+    entity_id = await _entity(db_session)
+    for value in ("213800M7YRBZAV8RSU22", "549300W60Z4K5OM53K56"):
+        db_session.add(
+            EntityIdentifier(id=uuid.uuid4(), entity_id=entity_id, scheme="lei", value=value)
+        )
+    await db_session.flush()
+
+    assert await _violations(db_session, "entity_holds_one_identifier_per_scheme") == 0
+
+
 async def test_relationship_without_a_source_document_is_reported(db_session) -> None:
     """Krawędź bez pochodzenia łamie N2 — twierdzenie bez źródła."""
     src = await _entity(db_session, "ALFA")
