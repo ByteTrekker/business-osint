@@ -109,7 +109,10 @@ priorytetowi, nie chronologii.
       Miejsca starczy: 294 GB wolnego, baza zajmuje 12 GB.
       Uwaga: serwer **ignoruje nagłówek `Range`**, więc pobranie jest
       jednorazowe i całościowe — wznawianie odpada, trzeba to uwzględnić
-      w zadaniu ETL.
+      w zadaniu ETL. Zmierzone tempo: ~18 MB/min, czyli ponad 95 minut.
+      Zadanie pobierające **nie może mieć limitu czasu** — ma mieć limit
+      prędkości (przerwij, gdy transfer stanął). Pierwsze podejście padło
+      na 94% przez limit 90 minut i całość poszła do kosza.
       Współrzędne są w EPSG:2180 (PUWG 1992), do mapy trzeba je przerzutować
       na WGS84 — `pyproj` robi to poprawnie, sprawdzone na znanym punkcie.
 

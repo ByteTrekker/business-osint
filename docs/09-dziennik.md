@@ -12,6 +12,28 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Pobranie PRG przerwane na 94% przez limit, który sam ustawiłem
+
+**Co się stało.** `curl --max-time 5400` przerwał pobieranie po 90 minutach,
+gdy na dysku było **1 687 984 033 z 1 790 077 530 bajtów**. Archiwum bez
+katalogu centralnego jest bezużyteczne, a serwer GUGiK **ignoruje nagłówek
+`Range`**, więc wznowienie nie istnieje — trzeba od zera. Około 1,7 GB ruchu
+z cudzego serwera zmarnowane.
+
+**To była moja pomyłka, i to podwójna.** Sam wcześniej zapisałem w tym dzienniku,
+że serwer nie wspiera wznawiania i że pobranie musi być traktowane jako
+wszystko-albo-nic. Mimo to ustawiłem limit czasu **krótszy niż zmierzone tempo
+transferu**: 18 MB/min przy 1707 MB to ponad 95 minut, a limit wynosił 90.
+
+**Wniosek na przyszłość, ogólniejszy niż ten jeden plik.** Przy transferze,
+którego nie da się wznowić, limit czasu jest złym narzędziem — mierzy nie to,
+co trzeba. Właściwy jest limit **prędkości**: przerwij, gdy transfer faktycznie
+stanął (`--speed-limit` z `--speed-time`), a nie gdy minęła arbitralna godzina.
+Limit czasu chroni przed zawieszeniem procesu; limit prędkości chroni przed
+zawieszeniem i pozwala wolnemu, ale postępującemu pobraniu dobiec do końca.
+
+---
+
 ## 2026-08-31 — Adresy: to nie normalizacja się rozjechała, tylko kolumny
 
 **Trzy razy zmieniałem diagnozę, zanim napisałem kod.** Warto zapisać drogę,
