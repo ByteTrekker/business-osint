@@ -237,3 +237,18 @@ async def backfill_lei_records(*, progress: Any = None) -> int:
             },
         )
     return len(records)
+
+
+async def refresh_map_grid() -> int:
+    """Przelicza siatkę mapy. Zwraca liczbę komórek.
+
+    Wołane po każdym imporcie, który zmienia adresy albo współrzędne. Siatka
+    jest **kopią** stanu `addresses`, więc pominięcie tego kroku nie psuje
+    żadnego zapytania — mapa po prostu po cichu pokazuje poprzedni import.
+    Dlatego `/map/coverage` zwraca datę przeliczenia: rozjazd ma być widoczny.
+    """
+    factory = get_etl_sessionmaker()
+    async with factory() as session, session.begin():
+        await session.execute(text("SET LOCAL statement_timeout = '30min'"))
+        wynik = await session.execute(text("SELECT odswiez_siatke_adresow()"))
+        return int(wynik.scalar_one())

@@ -161,3 +161,46 @@ export const api = {
   graph: (id: string, depth = 2, includeHistorical = false) =>
     get<GraphResponse>(`/graph/${id}?depth=${depth}&include_historical=${includeHistorical}`),
 };
+
+export interface MapCluster {
+  latitude: number;
+  longitude: number;
+  addresses: number;
+  entities: number;
+}
+
+export interface MapView {
+  clusters: MapCluster[];
+  /** Bok komórki siatki w stopniach; `null` = pojedyncze adresy, bez grupowania. */
+  cell_degrees: number | null;
+  truncated: boolean;
+}
+
+export interface MapCoverage {
+  with_coordinates: number;
+  without_coordinates: number;
+  refreshed_at: string | null;
+}
+
+export async function fetchMapClusters(
+  bounds: { south: number; north: number; west: number; east: number },
+  zoom: number,
+  signal?: AbortSignal,
+): Promise<MapView> {
+  const query = new URLSearchParams({
+    south: String(bounds.south),
+    north: String(bounds.north),
+    west: String(bounds.west),
+    east: String(bounds.east),
+    zoom: String(zoom),
+  });
+  const response = await fetch(`${API_URL}/map/clusters?${query}`, { signal });
+  if (!response.ok) throw new Error(`Mapa: HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function fetchMapCoverage(): Promise<MapCoverage> {
+  const response = await fetch(`${API_URL}/map/coverage`);
+  if (!response.ok) throw new Error(`Pokrycie mapy: HTTP ${response.status}`);
+  return response.json();
+}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,6 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link href="/" className="topbar__brand">
             business-osint
           </Link>
+          <nav className="topbar__nav">
+            <Link href="/mapa">mapa</Link>
+          </nav>
           <span className="topbar__tag">dane z rejestrów publicznych</span>
         </header>
         <main className="container">{children}</main>

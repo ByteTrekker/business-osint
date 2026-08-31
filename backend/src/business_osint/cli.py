@@ -143,9 +143,31 @@ def import_prg_cmd(
     def show(stats: PrgStats, nazwa: str) -> None:
         typer.echo(f"  [{stats.files:2}] {nazwa[:44]:46} punktow: {stats.points_loaded:>9,}")
 
-    stats, report = asyncio.run(_with_data_check(import_prg(Path(archiwum), progress=show)))
+    from business_osint.etl.maintenance import refresh_map_grid
+
+    async def import_i_siatka() -> PrgStats:
+        wynik = await import_prg(Path(archiwum), progress=show)
+        # Ta sama pętla zdarzeń co import — drugie `asyncio.run()` dostałoby
+        # połączenia przypięte do zamkniętej pętli.
+        typer.echo(f"  siatka mapy: {await refresh_map_grid():,} komorek")
+        return wynik
+
+    stats, report = asyncio.run(_with_data_check(import_i_siatka()))
     typer.echo(f"\nPRG: {stats.as_dict()}")
     _echo_data_check(report)
+
+
+@app.command("refresh-map")
+def refresh_map() -> None:
+    """Przelicza siatkę mapy zbiorczej.
+
+    Uruchamiane po imporcie, który zmienia adresy albo współrzędne. Bez tego
+    mapa pokazuje poprzedni stan — cicho, bo poprawnie działa nadal.
+    """
+    from business_osint.etl.maintenance import refresh_map_grid
+
+    komorek = asyncio.run(refresh_map_grid())
+    typer.echo(f"Siatka mapy: {komorek:,} komorek.")
 
 
 @app.command("check-data")

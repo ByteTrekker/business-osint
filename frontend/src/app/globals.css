@@ -516,3 +516,21 @@ h2 {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* Mapa zbiorcza. Wysokość stała, bo Leaflet potrzebuje wymiaru w momencie
+   inicjalizacji — kontener rosnący z treści miałby wtedy zero pikseli. */
+.clustermap {
+  height: 70vh;
+  min-height: 420px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.topbar__nav {
+  margin-left: 1.25rem;
+}
+
+.topbar__nav a {
+  color: inherit;
+}

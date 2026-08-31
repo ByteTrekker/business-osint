@@ -61,6 +61,10 @@ also_copy = [
     # czegokolwiek. Jego test ładuje go po ścieżce, więc plik musi być
     # w piaskownicy — inaczej zbieranie testów pada i mutmut nie startuje.
     "ops/",
+    # Stałe siatki mapy są zapisane w danych przez migrację 0011. Test pilnuje,
+    # żeby wartość w kodzie i wartość, w której siatkę policzono, się nie
+    # rozjechały — więc plik migracji musi być w piaskownicy.
+    "alembic/versions/",
 ]
 # Tylko testy jednostkowe — integracyjne wymagałyby bazy przy każdym mutancie.
 pytest_add_cli_args_test_selection = ["tests/unit/"]

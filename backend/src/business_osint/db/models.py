@@ -310,6 +310,13 @@ class Address(Base):
         UniqueConstraint("normalized", name="uq_addresses_normalized"),
         Index("ix_addresses_city", "city"),
         Index("ix_addresses_match_key", "match_key"),
+        # Częściowy: mapa pyta wyłącznie o adresy, które mają współrzędne.
+        Index(
+            "ix_addresses_coordinates",
+            "latitude",
+            "longitude",
+            postgresql_where=text("latitude IS NOT NULL"),
+        ),
     )
 
 
@@ -599,3 +606,24 @@ class IngestionRun(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="running")
     stats: Mapped[json_col]
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class AddressCell(Base):
+    """Przeliczona siatka mapy — patrz migracja 0011.
+
+    Tabela jest **wyłącznie do odczytu z poziomu aplikacji**: wypełnia ją funkcja
+    bazy `odswiez_siatke_adresow()`, uruchamiana po imporcie. Model istnieje po
+    to, żeby `alembic check` widział tę tabelę i żeby testy mogły ją czytać.
+    """
+
+    __tablename__ = "address_cells"
+
+    lat_idx: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lon_idx: Mapped[int] = mapped_column(Integer, primary_key=True)
+    addresses: Mapped[int] = mapped_column(Integer, nullable=False)
+    entities: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    lat_sum: Mapped[float] = mapped_column(Numeric, nullable=False)
+    lon_sum: Mapped[float] = mapped_column(Numeric, nullable=False)
+    refreshed_at: Mapped[utc_now]
+
+    __table_args__ = (Index("ix_address_cells_bbox", "lat_idx", "lon_idx"),)

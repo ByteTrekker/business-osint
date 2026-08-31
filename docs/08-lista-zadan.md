@@ -104,17 +104,25 @@ priorytetowi, nie chronologii.
       - **„czy chodziło o…"** przy zerowym wyniku — trigram już liczy
         podobieństwo, tylko go nie pokazujemy.
 
-- [ ] **Mapa zbiorcza podmiotów** z grupowaniem znaczników.
-      - klastrowanie po stronie serwera: agregacja po siatce zależnej od poziomu
-        przybliżenia, zwracamy liczności zamiast punktów — 2,4 mln znaczników
-        nie ma prawa trafić do przeglądarki
-      - rozdzielanie klastrów przy przybliżaniu
-      - **warunek wstępny: współrzędne dla całej bazy.** Nominatim przy limicie
-        1 zapytania na sekundę to 28 dni odpytywania cudzej infrastruktury —
-        to nie jest droga. Zbadane 2026-08-31, są dwie realne:
+- [x] **Mapa zbiorcza podmiotów** z grupowaniem znaczników. `/mapa`.
+      Klastrowanie po stronie bazy, a nie w przeglądarce. Siatka jest
+      **przeliczona raz** (`address_cells`, 297 246 komórek po 0,005 stopnia,
+      migracja 0011), a zgrubniejsze poziomy zwijają się z niej w locie —
+      liczenie w locie kosztowało 1,8 s na jedno przesunięcie widoku, teraz
+      154 ms dla całego kraju i 18 ms dla Warszawy.
+      Przeliczenie: `refresh-map`, wołane automatycznie po `import-prg`.
+      - [ ] przeliczać siatkę także po `import-ceidg` i `merge-addresses` —
+        dziś po tych importach mapa po cichu pokazuje poprzedni stan.
+        `/map/coverage` zwraca datę przeliczenia, więc rozjazd jest widoczny,
+        ale nikt na niego nie patrzy.
+      - [ ] klik w skupisko → lista podmiotów pod tym adresem
+        (`co-located` już to potrafi, brakuje tylko wejścia z mapy)
+      - [ ] filtr po statusie i formie prawnej — mapa pokazuje dziś wszystko
+        naraz, a „gdzie są spółki z o.o." to inne pytanie niż „gdzie ktokolwiek
+        jest zarejestrowany"
 
-- [ ] **UUG — rządowy geokoder GUGiK** (droga uzupełniająca, dla adresów,
-      których PRG nie pokryje).
+- [ ] **UUG — rządowy geokoder GUGiK** dla 475 707 adresów, których PRG nie
+      pokrył (droga uzupełniająca).
       `https://services.gugik.gov.pl/uug/?request=GetAddress&address=...`
       Format zapytania to **`Miasto, Ulica Numer`** — przecinek po mieście jest
       obowiązkowy, bez niego usługa nie trafia. Zmierzone na 40 prawdziwych
@@ -131,9 +139,11 @@ priorytetowi, nie chronologii.
       wpisów jako „działalność prowadzona wyłącznie w formie spółki cywilnej".
       To jedyna droga do prawdziwej warstwy powiązań między osobami w CEIDG —
       dziś tego pola nie czytamy wcale.
-- [ ] **Napisać przy mapie, że 714 771 firm nie ma adresu.** To co piąty
+- [x] **Napisać przy mapie, że 714 771 firm nie ma adresu.** To co piąty
       przedsiębiorca; nie da się ich pokazać i mapa bez tej adnotacji wygląda
-      na kompletną.
+      na kompletną. Pod mapą jest teraz pełne rozliczenie: 1 946 032 z 2 421 739
+      adresów widocznych (80%), 475 707 niedopasowanych do punktu PRG, plus te
+      714 771 przedsiębiorców bez adresu w ogóle.
 - [ ] **SUDOP** — pomoc publiczna i de minimis, na żądanie po NIP-ie.
       Aplikacja JSF bez API, ale ma eksport CSV.
 - [ ] **KRZ** — upadłości, restrukturyzacje, zakazy działalności, bezskuteczne

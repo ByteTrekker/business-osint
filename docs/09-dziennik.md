@@ -621,3 +621,67 @@ nie powstaje encja osoby**, bo nazwiska są zamaskowane do pierwszej litery.
 **Skutek uboczny.** Odpis pokazał, że zawiera **KRS i NIP naraz** — co jest
 legalną podstawą scalenia duplikatów typu „ORLEN S.A. dwa razy" w rozumieniu
 niezmiennika N4. Podniosło to priorytet wpięcia KRS.
+
+---
+
+## 2026-09-01 — Mapa: agregacja, która nie zależy od zapytania
+
+**Objaw.** Pierwsza działająca wersja mapy zbiorczej odpowiadała 1,8 s na jedno
+przesunięcie widoku. Mapa, która myśli dwie sekundy przy każdym ruchu myszy,
+nie jest mapą.
+
+**Co pokazał plan.** Dwie rzeczy naraz. Złączenie z `entities` po stopień węzła
+wymuszało skan 9,5 mln wierszy. I grupowanie po wyrażeniu `round(latitude/:cell)`
+było dla planisty nieprzejrzyste — szacował 356 tys. grup przy 723
+rzeczywistych, więc zamiast agregacji mieszającej wybierał sortowanie ze
+zrzutem 17 MB na dysk. Indeks częściowy na współrzędnych (migracja 0010) zbił
+sam skan adresów ze 134 ms do 54 ms, ale reszty nie ruszał.
+
+**Obserwacja, która rozwiązała problem.** Ta agregacja **nie zależy od
+zapytania**. Siatka jest stała, dane zmieniają się tylko przy imporcie.
+Liczenie jej przy każdym przesunięciu myszy to powtarzanie tej samej pracy —
+nie problem wydajności zapytania, tylko zła pora na jego wykonanie.
+
+**Rozwiązanie.** Jeden przeliczony poziom (`address_cells`, 297 246 komórek po
+0,005 stopnia, 4,7 s przeliczenia), a zgrubniejsze poziomy zwijane z niego
+w locie. Zwijanie jest dokładne pod jednym warunkiem: każdy bok komórki musi
+być całkowitą wielokrotnością komórki bazowej, a binowanie musi iść przez
+`floor`, nie `round` — `floor(floor(x/f)/k)` równa się `floor(x/(f*k))`, przy
+`round` ta równość nie zachodzi.
+
+**Wynik.** Cały kraj 1821 → 154 ms, województwo 852 → 38 ms, Warszawa → 18 ms.
+
+**Trzy rzeczy, które kosztowały osobno.**
+
+*Metadane na ścieżce gorącej.* Liczba adresów bez współrzędnych to skan 2,4 mln
+wierszy, 108 ms — doliczany do **każdego** przesunięcia widoku, choć zmienia się
+wyłącznie przy imporcie. Osobny punkt końcowy `/map/coverage`, wołany raz.
+
+*Promień w pikselach, nie w wartościach bezwzględnych.* Pierwsza wersja skalowała
+promień pierwiastkiem z licznika do 34 px. Przy widoku całego kraju komórka
+0,25 stopnia ma na ekranie kilkanaście pikseli — koła zlały się w jednolitą
+niebieską plamę w kształcie Polski. Ten sam licznik znaczy inną gęstość na
+każdym poziomie, więc maksymalny promień musi wynikać z **ekranowego** rozmiaru
+komórki.
+
+*Asynchroniczne tworzenie mapy nie paruje się ze sprzątaniem.* `await
+import("leaflet")` wewnątrz efektu Reacta oznacza, że tworzenie jest
+asynchroniczne, a sprzątanie synchroniczne. Przy podwójnym montowaniu na jednym
+kontenerze powstawała druga, osierocona instancja: dublowała żądania (widoczne
+w logu sieci jako dwa prostokąty różniące się o 0,025 stopnia — dwie różne
+wysokości kontenera) i przestawała reagować na kliknięcia. Leaflet ładowany
+przez stan komponentu, mapa tworzona synchronicznie.
+
+**Czego się nauczyłem o weryfikacji.** Trzy razy odczytałem stan strony
+w trakcie animacji Leafleta i trzy razy wyciągnąłem fałszywy wniosek — raz
+„brak znaczników", raz „zero po przybliżeniu", raz „zapytanie nie poszło".
+Za każdym razem drugi odczyt kilka sekund później pokazywał stan poprawny.
+Zrzut ekranu i odczyt DOM w trakcie przejścia to **pomiar w połowie operacji**,
+a nie obserwacja wyniku.
+
+**Reguła siatki wylądowała w `domain/`.** Warunek „bok komórki jest całkowitą
+wielokrotnością komórki bazowej" nie potrzebuje bazy, a jego złamanie jest
+dokładnie tą klasą błędu, o którą chodzi w testach mutacyjnych: mapa nadal
+rysuje, liczby przestają się sumować, nic nie zgłasza błędu. Bramka mutacyjna
+od razu wykazała, że wyjątek z pustym komunikatem przechodzi mój test — bo
+sprawdzał tylko typ wyjątku, nie to, czy komunikat nazywa błędną wartość.
