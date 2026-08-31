@@ -71,6 +71,31 @@ priorytetowi, nie chronologii.
 
 ## Do zrobienia — funkcje
 
+- [ ] **Paginacja.** Dziś API zwraca `limit` i nic poza tym — nie ma jak
+      poprosić o kolejną stronę ani dowiedzieć się, ile wyników w ogóle jest.
+      Dotyczy trzech miejsc:
+      - **wyniki wyszukiwania** — „ORLEN" ma w bazie 25 dopasowań, widać 20
+      - **powiązania na profilu** — tabela jest ucinana bez zapowiedzi
+      - **lista firm pod adresem** i **firm osoby**, gdy powstaną
+      Uwaga na kształt: `OFFSET` przy dużych przesunięciach czyta i odrzuca
+      wszystkie wcześniejsze wiersze, a wyszukiwarka jest etapowa — numer strony
+      nie ma tu prostego znaczenia. Do rozważenia kursor po `(score, id)`
+      zamiast numeru strony. Musi też trafić do `meta`, bo niezmiennik N3 mówi,
+      że przycięcie wyniku jest częścią kontraktu, a nie cichą decyzją.
+
+- [ ] **Wyszukiwarka — druga tura.** Ranking jest naprawiony, ale zostało:
+      - **kolejność słów** — „PKN ORLEN" trafia dopiero trigramem (209 ms),
+        bo nie jest prefiksem żadnej nazwy. Dopasowanie po zbiorze słów
+        rozwiązałoby to w milisekundach.
+      - **filtry** — typ podmiotu, województwo, status, PKD. Mamy te kolumny
+        i ani jednego sposobu, żeby po nich zawęzić.
+      - **wyszukiwanie po adresie** — dziś nie da się znaleźć „Chemików 7,
+        Płock", choć adresy są encjami z własnymi nazwami.
+      - **podpowiedzi w trakcie pisania** — etap prefiksowy kosztuje 0,3 ms,
+        więc stać nas na to bez dodatkowej infrastruktury.
+      - **„czy chodziło o…"** przy zerowym wyniku — trigram już liczy
+        podobieństwo, tylko go nie pokazujemy.
+
 - [ ] **Mapa zbiorcza podmiotów** z grupowaniem znaczników.
       - klastrowanie po stronie serwera: agregacja po siatce zależnej od poziomu
         przybliżenia, zwracamy liczności zamiast punktów — 2,4 mln znaczników
