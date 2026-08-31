@@ -17,8 +17,12 @@ async def search(
     q: Annotated[str, Query(min_length=2, max_length=200, description="Nazwa, NIP, KRS lub REGON")],
     type: Annotated[str | None, Query(description="Filtr typu encji")] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    fuzzy: Annotated[
+        bool,
+        Query(description="Dopasowanie rozmyte — wolniejsze, włączane świadomie"),
+    ] = False,
 ) -> SearchResultOut:
-    hits = await EntityRepository(session).search(q, entity_type=type, limit=limit)
+    hits = await EntityRepository(session).search(q, entity_type=type, limit=limit, fuzzy=fuzzy)
     return SearchResultOut(
         query=q,
         hits=[
