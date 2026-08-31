@@ -120,6 +120,10 @@ def _name_stage(condition: str, base: float, span: float) -> Any:
             LIMIT :candidates
         ) e
         LEFT JOIN companies c ON c.entity_id = e.id
+        -- Filtr statusu **po** złączeniu, bo status mieszka w `companies`.
+        -- Wciągnięcie go do podzapytania oznaczałoby złączenie na całej puli
+        -- kandydatów zamiast na wycinku, który i tak przechodzi przez ranking.
+        WHERE CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text)
         -- `e.id` na końcu nie jest ozdobnikiem: bez niego wiersze o równej
         -- trafności wracają w kolejności zależnej od planu, a wtedy przy
         -- stronicowaniu ten sam podmiot potrafi pojawić się dwa razy albo
@@ -134,6 +138,20 @@ def _name_stage(condition: str, base: float, span: float) -> Any:
 # się do tego samego, więc ten etap trafia w spółkę mimo różnicy w zapisie.
 _BY_EXACT_NAME = _name_stage("normalized_name = :normalized", 0.90, 0.09)
 
+# Dopasowanie po **zbiorze słów**, niezależne od kolejności. „termika orlen"
+# trafia w ORLEN TERMIKA, czego żaden prefiks nie zrobi, a trigram robi
+# w setkach milisekund zamiast w 0,15 ms.
+#
+# Semantyka jest koniunkcyjna: wszystkie słowa zapytania muszą wystąpić.
+# Alternatywa („którekolwiek") dla „jan kowalski" zwróciłaby setki tysięcy
+# wierszy, więc zapytania z wyrazami spoza nazwy — jak „PKN ORLEN", gdzie
+# w bazie jest samo „orlen" — obsługuje dopiero trigram na końcu.
+_BY_WORDS = _name_stage(
+    "to_tsvector('simple', normalized_name) @@ plainto_tsquery('simple', :normalized)",
+    0.55,
+    0.14,
+)
+
 # Prefiks kończący się na granicy słowa: „orlen termika" tak, „orlena" nie.
 # Spacja to najniższy drukowalny znak, więc `LIKE 'orlen %'` to wąski zakres
 # na tym samym indeksie btree co prefiks szeroki — dodatkowy etap nic nie kosztuje.
@@ -141,7 +159,7 @@ _BY_WORD_PREFIX = _name_stage("normalized_name LIKE :word_prefix", 0.70, 0.19)
 
 # Prefiks dowolny — obsługuje pisanie w trakcie („orlen ter") i wpadające przy
 # okazji „orlena". Świadomie ostatni z etapów prefiksowych.
-_BY_PREFIX = _name_stage("normalized_name LIKE :prefix", 0.40, 0.29)
+_BY_PREFIX = _name_stage("normalized_name LIKE :prefix", 0.40, 0.14)
 
 _BY_SURNAME = text("""
     SELECT e.id, e.entity_type, e.display_name, e.degree, 0.35::float8 AS score
@@ -152,13 +170,17 @@ _BY_SURNAME = text("""
     LIMIT :limit
 """)
 
+# Filtr statusu obowiązuje także tutaj. Etap ostatni, który po cichu ignoruje
+# zawężenie wybrane przez użytkownika, jest gorszy niż brak wyników.
 _BY_TRIGRAM = text("""
     SELECT e.id, e.entity_type, e.display_name, e.degree,
            (0.30 + similarity(e.normalized_name, :normalized) * 0.09)::float8 AS score
     FROM entities e
+    LEFT JOIN companies c ON c.entity_id = e.id
     WHERE e.merged_into_id IS NULL
       AND e.normalized_name % :normalized
       AND (CAST(:entity_type AS text) IS NULL OR e.entity_type = CAST(:entity_type AS text))
+      AND (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
     ORDER BY score DESC, e.degree DESC, e.id
     LIMIT :limit
 """)
@@ -181,11 +203,16 @@ class EntityRepository:
         query: str,
         *,
         entity_type: str | None = None,
+        status: str | None = None,
         limit: int = 20,
         offset: int = 0,
         fuzzy: bool = False,
     ) -> tuple[list[SearchHit], bool]:
         """Szuka podmiotu, przechodząc od najtańszej metody do najdroższej.
+
+        ``status`` zawęża do podmiotów o danym stanie (`active`, `suspended`,
+        `inactive`). Nie dotyczy wyszukiwania po identyfikatorze: kto podał NIP,
+        chce tę encję, a nie komunikat, że jest zawieszona.
 
         ``fuzzy`` wymusza dopasowanie trigramowe. Domyślnie uruchamia się ono
         wyłącznie wtedy, gdy tańsze etapy nie zwróciły nic — kosztuje
@@ -229,6 +256,7 @@ class EntityRepository:
                 "word_prefix": f"{normalized} %",
                 "prefix": f"{normalized}%",
                 "entity_type": entity_type,
+                "status": status,
                 # Pula kandydatów musi pomieścić stronę, do której schodzimy —
                 # inaczej przy większym przesunięciu ranking miałby z czego
                 # wybierać mniej, niż wynosi żądany wycinek.
@@ -239,7 +267,7 @@ class EntityRepository:
             # limit pomniejszony o to, co już mamy, zjadały duplikaty odrzucane
             # dopiero po pobraniu. Objawiało się to gubieniem wyników na dalszych
             # stronach: przy `offset=20` wracał jeden wiersz zamiast trzech.
-            for stage in (_BY_EXACT_NAME, _BY_WORD_PREFIX, _BY_PREFIX):
+            for stage in (_BY_EXACT_NAME, _BY_WORD_PREFIX, _BY_WORDS, _BY_PREFIX):
                 if len(rows) >= needed:
                     break
                 take(await self._fetch(stage, {**params, "limit": needed}))
@@ -266,6 +294,7 @@ class EntityRepository:
                     {
                         "normalized": normalized,
                         "entity_type": entity_type,
+                        "status": status,
                         "limit": needed,
                     },
                 )

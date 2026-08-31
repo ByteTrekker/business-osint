@@ -23,6 +23,13 @@ async def search(
     session: SessionDep,
     q: Annotated[str, Query(min_length=2, max_length=200, description="Nazwa, NIP, KRS lub REGON")],
     type: Annotated[str | None, Query(description="Filtr typu encji")] = None,
+    status: Annotated[
+        str | None,
+        Query(
+            pattern="^(active|suspended|inactive|partnership_only)$",
+            description="Filtr stanu działalności; nie dotyczy szukania po identyfikatorze",
+        ),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     offset: Annotated[
         int,
@@ -41,7 +48,7 @@ async def search(
     ] = False,
 ) -> SearchResultOut:
     hits, has_more = await EntityRepository(session).search(
-        q, entity_type=type, limit=limit, offset=offset, fuzzy=fuzzy
+        q, entity_type=type, status=status, limit=limit, offset=offset, fuzzy=fuzzy
     )
     return SearchResultOut(
         query=q,
