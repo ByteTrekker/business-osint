@@ -20,7 +20,10 @@ dependencies = [
 [project.optional-dependencies]
 # DuckDB czyta shapefile i GML bez GDAL-a w systemie i reprojektuje
 # współrzędne — cała obsługa PRG mieści się w jednej zależności pip.
-etl = ["duckdb>=1.1"]
+# `pyproj` reprojektuje współrzędne PRG z EPSG:2180 na WGS84. DuckDB czyta GML,
+# ale nie rozwiązuje referencji `xlink`, na których stoi ten format — parser
+# jest własny, strumieniowy.
+etl = ["pyproj>=3.6"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",

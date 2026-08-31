@@ -196,6 +196,39 @@ class Person(Base):
     )
 
 
+class EntityChange(Base):
+    """Dziennik zmian atrybutów podmiotu — fundament monitoringu i alertów.
+
+    Zakres jest celowo wąski: **tylko pola nadpisywane w miejscu**. Relacje są
+    bitemporalne, więc ich historia jest odtwarzalna z `recorded_at`
+    i `superseded_at`; dublowanie jej tutaj podwoiłoby zapis przy imporcie
+    milionów krawędzi i nic nie wniosło.
+
+    Wpisy powstają przez **wyzwalacze bazy**, nie przez kod aplikacji. Do
+    `companies` i `entities` pisze kilka niezależnych ścieżek — ORM, zbiorczy SQL
+    importu CEIDG, wzbogacanie z KRS — a wyzwalacza nie da się ominąć przy
+    dopisaniu kolejnej.
+    """
+
+    __tablename__ = "entity_changes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
+    )
+    observed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    field: Mapped[str] = mapped_column(String(32), nullable=False)
+    old_value: Mapped[str | None] = mapped_column(Text)
+    new_value: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_entity_changes_entity", "entity_id", "observed_at"),
+        Index("ix_entity_changes_observed", "observed_at"),
+    )
+
+
 class AddressPoint(Base):
     """Punkt adresowy z PRG — dane **referencyjne**, nie encja grafu.
 
@@ -223,6 +256,10 @@ class AddressPoint(Base):
     teryt: Mapped[str | None] = mapped_column(String(16))
     simc: Mapped[str | None] = mapped_column(String(16))
     ulic: Mapped[str | None] = mapped_column(String(16))
+    #: Województwo wyliczone z TERYT przy wczytaniu. Bez niego dopasowanie po
+    #: samej nazwie miejscowości przypisuje „Zawadzie" z Małopolski współrzędne
+    #: „Zawady" z lubuskiego — 400 km dalej.
+    voivodeship: Mapped[str | None] = mapped_column(String(64))
     latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
 
@@ -231,6 +268,7 @@ class AddressPoint(Base):
         # więc btree; jeden adres może mieć w PRG kilka punktów (budynek
         # z wieloma wejściami), dlatego bez unikalności.
         Index("ix_address_points_match_key", "match_key"),
+        Index("ix_address_points_match", "match_key", "voivodeship"),
     )
 
 

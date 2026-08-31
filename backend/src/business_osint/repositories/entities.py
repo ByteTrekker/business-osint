@@ -317,6 +317,18 @@ class EntityRepository:
         """Ilu sąsiadów ma podmiot pod swoim adresem."""
         return int((await self._session.execute(_CO_LOCATED_COUNT, {"id": entity_id})).scalar_one())
 
+    async def changes(
+        self, entity_id: uuid.UUID, *, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Oś czasu zmian podmiotu: atrybuty z dziennika plus powiązania z relacji."""
+        rows = await self._session.execute(
+            _CHANGES, {"id": entity_id, "limit": limit, "offset": offset}
+        )
+        return [dict(row) for row in rows.mappings()]
+
+    async def count_changes(self, entity_id: uuid.UUID) -> int:
+        return int((await self._session.execute(_CHANGES_COUNT, {"id": entity_id})).scalar_one())
+
     @staticmethod
     def _identifier_candidate(query: str) -> str | None:
         """Zwraca numer, jeżeli zapytanie wygląda na identyfikator rejestrowy."""
@@ -614,4 +626,61 @@ _CO_LOCATED_COUNT = text("""
                         AND r.superseded_at IS NULL
     JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
     WHERE e.id <> :id
+""")
+
+
+# Kanał zmian łączy dwa **różne** źródła prawdy i to jest jego istota.
+#
+# Zmiany atrybutów muszą być logowane w chwili zapisu, bo import nadpisuje je
+# w miejscu — bez dziennika poprzednia wartość znika bezpowrotnie.
+#
+# Zmiany powiązań są odtwarzalne **wstecz**, bo relacje są bitemporalne:
+# `recorded_at` mówi, kiedy fakt do nas trafił, a `superseded_at`, kiedy
+# przestał obowiązywać. Dublowanie ich w dzienniku podwoiłoby zapis przy
+# imporcie milionów krawędzi i nie dołożyło ani jednej informacji.
+#
+# Dlatego dziennik obejmuje tylko to, czego inaczej nie da się odzyskać —
+# a odczyt scala jedno z drugim w jedną oś czasu.
+_CHANGES = text("""
+    (
+        SELECT c.observed_at, c.field AS rodzaj, c.old_value AS z, c.new_value AS na,
+               NULL::text AS podmiot, c.id AS kolejnosc
+        FROM entity_changes c
+        WHERE c.entity_id = :id
+    )
+    UNION ALL
+    (
+        SELECT r.recorded_at, 'powiazanie_dodane', NULL, r.relationship_type,
+               e.display_name, NULL::bigint
+        FROM relationships r
+        JOIN entities e ON e.id = CASE WHEN r.source_entity_id = :id
+                                       THEN r.target_entity_id ELSE r.source_entity_id END
+        WHERE (r.source_entity_id = :id OR r.target_entity_id = :id)
+    )
+    UNION ALL
+    (
+        SELECT r.superseded_at, 'powiazanie_zamkniete', r.relationship_type, NULL,
+               e.display_name, NULL::bigint
+        FROM relationships r
+        JOIN entities e ON e.id = CASE WHEN r.source_entity_id = :id
+                                       THEN r.target_entity_id ELSE r.source_entity_id END
+        WHERE (r.source_entity_id = :id OR r.target_entity_id = :id)
+          AND r.superseded_at IS NOT NULL
+    )
+    -- `now()` w PostgreSQL zwraca czas **rozpoczęcia transakcji**, więc wszystkie
+    -- zmiany z jednego importu mają identyczny znacznik. To jest użyteczne —
+    -- widać, co przyszło razem — ale nie porządkuje ich między sobą. Remis
+    -- rozstrzyga rosnący klucz dziennika.
+    ORDER BY observed_at DESC, kolejnosc DESC NULLS LAST
+    LIMIT :limit OFFSET :offset
+""")
+
+_CHANGES_COUNT = text("""
+    SELECT
+        (SELECT count(*) FROM entity_changes WHERE entity_id = :id)
+      + (SELECT count(*) FROM relationships
+         WHERE source_entity_id = :id OR target_entity_id = :id)
+      + (SELECT count(*) FROM relationships
+         WHERE (source_entity_id = :id OR target_entity_id = :id)
+           AND superseded_at IS NOT NULL)
 """)

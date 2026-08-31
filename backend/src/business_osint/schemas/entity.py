@@ -105,6 +105,23 @@ class CoLocatedPageOut(BaseModel):
     meta: PageMeta
 
 
+class ChangeOut(BaseModel):
+    """Pojedyncze zdarzenie na osi czasu podmiotu."""
+
+    observed_at: dt.datetime
+    rodzaj: str = Field(description="Czego dotyczy: status, nazwa, powiązanie…")
+    z: str | None = Field(default=None, description="Wartość poprzednia")
+    na: str | None = Field(default=None, description="Wartość nowa")
+    podmiot: str | None = Field(
+        default=None, description="Druga strona powiązania, jeśli zdarzenie go dotyczy"
+    )
+
+
+class ChangePageOut(BaseModel):
+    items: list[ChangeOut]
+    meta: PageMeta
+
+
 class FinancialReportOut(BaseModel):
     """Dane finansowe za okres sprawozdawczy."""
 

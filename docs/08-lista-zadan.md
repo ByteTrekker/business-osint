@@ -32,6 +32,13 @@ priorytetowi, nie chronologii.
 - [x] **„Inne firmy tej osoby" — skreślone, nie odłożone.** Osoba fizyczna może
       mieć w CEIDG jeden wpis; 18 właścicieli na 3,55 mln ma dwie firmy. To nie
       brak danych, tylko prawo. Wróci, gdy będą spółki cywilne albo CRBR.
+- [x] **PRG — punkty adresowe wczytane.** 8 615 528 punktów, **1 946 032 adresy
+      ze współrzędnymi (82%)**, 1 946 195 z TERYT. Mapa zbiorcza ma z czego powstać.
+- [x] **Dziennik zmian podmiotu** — wyzwalacze bazy na polach nadpisywanych
+      w miejscu, kanał zmian scalający je z bitemporalnością relacji przy
+      odczycie. Fundament pod monitoring i alerty.
+- [x] **Baza testowa na migracjach** — `create_all` nie tworzy wyzwalaczy ani
+      widoków, więc schemat testowy różnił się od produkcyjnego.
 - [x] **Scalanie zduplikowanych adresów** — 12 665 encji scalonych, krawędzie
       przeniesione z zachowaniem N1 i N2, każde scalenie zapisane
       w `entity_merges`. 258 grup pominiętych, bo to miejscowości o tej samej
@@ -106,21 +113,6 @@ priorytetowi, nie chronologii.
         1 zapytania na sekundę to 28 dni odpytywania cudzej infrastruktury —
         to nie jest droga. Zbadane 2026-08-31, są dwie realne:
 
-- [ ] **PRG — masowy import punktów adresowych** (droga główna).
-      `https://opendata.geoportal.gov.pl/prg/adresy/PRG-punkty_adresowe.zip`
-      — 1,79 GB, SHP, bez uwierzytelniania i bez ograniczeń, ~7 mln punktów
-      adresowych dla całego kraju. Bezpłatne i do dowolnego wykorzystania,
-      także komercyjnego (rozporządzenie RM z 16.07.2021, Dz.U. 2021 poz. 1373).
-      Miejsca starczy: 294 GB wolnego, baza zajmuje 12 GB.
-      Uwaga: serwer **ignoruje nagłówek `Range`**, więc pobranie jest
-      jednorazowe i całościowe — wznawianie odpada, trzeba to uwzględnić
-      w zadaniu ETL. Zmierzone tempo: ~18 MB/min, czyli ponad 95 minut.
-      Zadanie pobierające **nie może mieć limitu czasu** — ma mieć limit
-      prędkości (przerwij, gdy transfer stanął). Pierwsze podejście padło
-      na 94% przez limit 90 minut i całość poszła do kosza.
-      Współrzędne są w EPSG:2180 (PUWG 1992), do mapy trzeba je przerzutować
-      na WGS84 — `pyproj` robi to poprawnie, sprawdzone na znanym punkcie.
-
 - [ ] **UUG — rządowy geokoder GUGiK** (droga uzupełniająca, dla adresów,
       których PRG nie pokryje).
       `https://services.gugik.gov.pl/uug/?request=GetAddress&address=...`
@@ -160,8 +152,6 @@ priorytetowi, nie chronologii.
 - [ ] Kolejka przeglądu dla entity resolution — klucz blokujący jest zapisywany,
       ale nigdzie nie wykorzystywany. Miał generować kandydatów do ręcznej
       oceny; dziś jest martwym polem.
-- [ ] `entity_changes` — tabela zdarzeń domenowych pod alerty. Dopisanie
-      wstecz oznacza utratę historii.
 - [ ] Testy jednostkowe dla nowych źródeł (CEIDG, CIT, BZP, geokoder)
 - [ ] Ścieżka dockerowa nadal nieuruchomiona ani razu. `make test-integration`
       już jej nie używa; zostają `make up`, `make psql` i `make bench`.

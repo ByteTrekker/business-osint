@@ -12,6 +12,96 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — PRG wczytane, i fałszywe dopasowanie złapane w porę
+
+**Wynik.** 8 615 528 punktów adresowych z szesnastu plików GML. **1 946 032
+adresy dostały współrzędne — 82% tych, które w ogóle da się dopasować.**
+Przy okazji 1 946 195 dostało TERYT, czyli urzędowy identyfikator gminy,
+którego rejestry przedsiębiorców nie podają wcale.
+
+Kontrola poprawności, która przekonuje bardziej niż sam odsetek: średnie
+współrzędne w każdym województwie trafiają w jego środek. Śląskie 50,24/18,94,
+mazowieckie 52,23/21,02, wielkopolskie 52,27/17,17. Gdyby dopasowanie było
+losowe, te liczby byłyby nieodróżnialne od siebie.
+
+**Format okazał się inny, niż zakładałem.** PRG rozdziela adres na trzy obiekty:
+punkt niesie numer i współrzędne, a nazwę miejscowości i ulicy trzyma jako
+**referencje `xlink`** do osobnych elementów. To unieważniło plan z DuckDB —
+czyta GML, ale `xlink` zostawia nierozwiązany, a w tym właśnie tkwi cała
+trudność. Parser jest własny, strumieniowy, dwuprzebiegowy.
+
+**Kolejność osi: pułapka, przed którą sam się ostrzegałem, i o mało w nią nie
+wszedłem.** Plik deklaruje `EPSG:2180`, którego urzędowa kolejność to
+(northing, easting), ale zapisuje odwrotnie. Chyrzyno odczytane zgodnie ze
+specyfikacją ląduje w Małopolsce — 350 km dalej, **nadal w Polsce**, więc żadne
+sprawdzenie „czy punkt jest w kraju" tego nie łapie. Rozstrzygnął dopiero pomiar
+na znanym punkcie.
+
+**Błąd, który wyglądał na sukces.** Pierwsza wersja dopasowywała po
+`miejscowość|ulica|numer`. Wynik: 61 088 adresów ze współrzędnymi z jednego
+województwa — wyglądało świetnie. Sprawdzenie, **skąd** pochodzą, pokazało
+**7 459 fałszywych**: „Buczków, małopolskie" dostał punkt z lubuskiego, 400 km
+dalej. Nazwy wsi powtarzają się między województwami.
+
+Gdybym puścił wszystkie pliki bez tego sprawdzenia, byłoby to zapisane
+w setkach tysięcy adresów, a każdy wyglądałby na poprawnie zgeokodowany. To ta
+sama klasa błędu co N4: scalanie na niewystarczającej podstawie.
+
+Naprawa: województwo z kodu TERYT jako warunek rozstrzygający. Jeden wyjątek,
+uzasadniony — klucz występujący w kraju **raz** dopasowujemy bez tego warunku,
+bo brak województwa po naszej stronie to niewiedza, nie sprzeczność. Po
+poprawce na lubuskim: 87,2% trafień, **zero fałszywych**.
+
+**Wniosek procesowy.** Odsetek trafień nie jest miarą poprawności. Pierwsza,
+błędna wersja miała **wyższy** odsetek niż druga — bo dopasowywała także to,
+czego nie powinna.
+
+---
+
+## 2026-08-31 — Dziennik zmian, i schemat testowy różny od produkcyjnego
+
+**Po co.** Monitoring zmian jest tym, czego konkurencja ma najwięcej, a my nie
+mieliśmy wcale. Pilność brała się z jednej rzeczy: **status, forma prawna,
+kapitał i nazwa są nadpisywane w miejscu**, więc każdy import bez dziennika
+kasował poprzednią wartość bezpowrotnie.
+
+**Zakres celowo wąski.** Logujemy wyłącznie pola nadpisywane w miejscu. Relacje
+są bitemporalne, więc ich historia jest odtwarzalna z `recorded_at`
+i `superseded_at`; dublowanie jej w dzienniku podwoiłoby zapis przy imporcie
+3,5 mln krawędzi i nie dołożyło ani jednej informacji. Kanał zmian scala oba
+źródła **dopiero przy odczycie**.
+
+**Wyzwalacze bazy, nie kod aplikacji.** Do `companies` i `entities` pisze ORM,
+zbiorczy SQL importu CEIDG i wzbogacanie z KRS. Wpięcie się w każdą ścieżkę
+z osobna oznaczałoby, że następna dopisana po cichu przestanie logować. Jest
+test, który celowo używa zbiorczego `UPDATE ... FROM`, żeby nikt nie przeniósł
+logowania do warstwy aplikacji.
+
+**Znalezione przy okazji, i większe od samej funkcji.** Testy dziennika padły,
+bo baza testowa powstawała przez `Base.metadata.create_all`. Tworzy on tabele
+i indeksy, ale **nie wyzwalacze ani widoki** — te istnieją tylko w migracjach.
+Schemat testowy różnił się więc od produkcyjnego, a conftest nadrabiał to,
+przepisując widok `graph_edges` ręcznie: druga definicja tego samego obiektu.
+To ta sama klasa błędu co przy normalizacji adresów i przy fixture KRS.
+
+Baza testowa idzie teraz przez `alembic upgrade head`. Testy działają na tym
+samym schemacie co produkcja i cała klasa cichego rozjazdu znika.
+
+**Dwie pułapki po drodze.**
+
+* `now()` w PostgreSQL zwraca czas **rozpoczęcia transakcji**, więc wszystkie
+  zmiany z jednego importu mają identyczny znacznik. To użyteczne — widać, co
+  przyszło razem — ale nie porządkuje ich między sobą; remis rozstrzyga rosnący
+  klucz dziennika.
+* Izolacja testów przez wycofanie transakcji ukrywa zapisy przed **innymi
+  połączeniami**. Testy kolejki zadań sprawdzają `SKIP LOCKED` między dwoma
+  workerami i przestały działać. Sprzątanie idzie przez `TRUNCATE`.
+
+**Ograniczenie, które trzeba powiedzieć wprost.** Dziennik zaczyna się w dniu
+wdrożenia. Zmian sprzed niego nie da się odzyskać — i to była cała pilność.
+
+---
+
 ## 2026-08-31 — Co piąty przedsiębiorca nie ma w CEIDG adresu
 
 **Pytanie brzmiało: czy da się ukryć adres w CEIDG.** Odpowiedziałem trzy razy

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from business_osint.domain.normalization import (
+    TERYT_WOJEWODZTWA,
     address_natural_key,
     address_point_key,
     address_search_key,
@@ -19,6 +20,7 @@ from business_osint.domain.normalization import (
     pesel_hash,
     split_person_name,
     street_from_address_line,
+    wojewodztwo_z_teryt,
 )
 
 
@@ -482,3 +484,47 @@ def test_street_name_starting_with_x_survives_the_city_strip_too() -> None:
     wejść w każde z dwóch miejsc, więc każde ma własny test.
     """
     assert street_from_address_line("Płock, Xawerego", city="Płock", building=None) == "Xawerego"
+
+
+# --- Województwo z kodu TERYT -----------------------------------------------
+
+
+def test_voivodeship_is_read_from_the_teryt_prefix() -> None:
+    """Dwie pierwsze cyfry TERYT to urzędowy kod województwa.
+
+    Bez tego dopasowanie punktu adresowego idzie po samej nazwie miejscowości,
+    a „Zawada", „Buczków" i „Lubień" istnieją w kilku województwach naraz —
+    7 459 adresów dostało w ten sposób współrzędne oddalone o kilkaset kilometrów.
+    """
+    assert wojewodztwo_z_teryt("0805022") == "lubuskie"
+    assert wojewodztwo_z_teryt("1465011") == "mazowieckie"
+    assert wojewodztwo_z_teryt("3210011") == "zachodniopomorskie"
+
+
+def test_every_voivodeship_code_is_known() -> None:
+    """Szesnaście województw, szesnaście kodów — brak któregokolwiek to cicha luka.
+
+    Punkt z nieznanym kodem nie dostałby województwa i wypadłby z warunku
+    rozstrzygającego dopasowanie.
+    """
+    assert len(TERYT_WOJEWODZTWA) == 16
+    assert all(wojewodztwo_z_teryt(f"{kod}00000") for kod in TERYT_WOJEWODZTWA)
+
+
+def test_unknown_or_missing_code_gives_none() -> None:
+    """Nieznany kod ma dać `None`, a nie zgadywać województwo."""
+    assert wojewodztwo_z_teryt("9900000") is None
+    assert wojewodztwo_z_teryt(None) is None
+    assert wojewodztwo_z_teryt("") is None
+    assert wojewodztwo_z_teryt("0") is None
+
+
+def test_the_bare_voivodeship_code_is_enough() -> None:
+    """Dwie cyfry to najkrótsze poprawne wejście — sam kod województwa.
+
+    TERYT gminy ma siedem znaków, ale kod województwa jest jego przedrostkiem
+    i bywa podawany osobno. Odrzucenie go byłoby wymaganiem informacji, której
+    funkcja nie potrzebuje.
+    """
+    assert wojewodztwo_z_teryt("08") == "lubuskie"
+    assert wojewodztwo_z_teryt("14") == "mazowieckie"
