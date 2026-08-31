@@ -113,6 +113,36 @@ CHECKS: tuple[Check, ...] = (
         """,
     ),
     Check(
+        name="one_address_row_per_physical_address",
+        invariant="N4",
+        description=(
+            "Ten sam adres zapisany dwa razy to dwie encje tam, gdzie jest jedno "
+            "miejsce — a wspólny adres jest w tym produkcie sygnałem powiązania, "
+            "więc rozbicie go na duplikaty ten sygnał gasi. Klucz to miejscowość, "
+            "ulica, numer budynku i lokalu; kod pocztowy **nie** wchodzi do "
+            "tożsamości, bo ten sam budynek bywa zapisany z dwoma kodami "
+            "(Agatówka: 37-450 i 37-464). Adresy w różnych województwach nie są "
+            "liczone jako duplikat — miejscowości o tej samej nazwie istnieją, "
+            "jest ich tu 272 pary."
+        ),
+        sql="""
+            SELECT lower(a.city) || ' ' || lower(a.street) || ' ' ||
+                   lower(a.building) || ' (x' || count(*) || ')'
+            FROM addresses a
+            WHERE a.city IS NOT NULL AND a.street <> '' AND a.building IS NOT NULL
+            GROUP BY lower(a.city), lower(a.street), lower(a.building),
+                     lower(coalesce(a.unit, ''))
+            HAVING count(*) > 1
+               AND count(DISTINCT a.voivodeship) FILTER (WHERE a.voivodeship IS NOT NULL) <= 1
+        """,
+        # Dług zastany, policzony 2026-08-31. Nie zeruje się samą poprawką
+        # mapperów: te wiersze już są w bazie, a ich scalenie wymaga przeniesienia
+        # krawędzi przez `entity_merges` z zachowaniem N1 i N2 — to osobna zmiana.
+        # Próg jest dokładny: 12 033. naruszenie oznacza, że mappery znowu się
+        # rozjechały.
+        threshold=12032,
+    ),
+    Check(
         name="relationship_has_provenance",
         invariant="N2",
         description=(
