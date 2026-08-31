@@ -12,6 +12,42 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Co piąty przedsiębiorca nie ma w CEIDG adresu
+
+**Pytanie brzmiało: czy da się ukryć adres w CEIDG.** Odpowiedziałem trzy razy
+i dopiero trzecia odpowiedź była poparta pomiarem właściwej rzeczy.
+
+1. „Tak, 675 tys. wpisów bez adresu" — liczba policzona na dwóch zbiorach,
+   które nie są rozłączne. Wyszła blisko prawdy przez przypadek.
+2. „To nasz błąd, nie rejestr" — sprawdziłem raport małopolskiego, zobaczyłem
+   0,002% pustych adresów i orzekłem stanowczo. **Zły raport.**
+3. Właściwy pomiar: CEIDG publikuje **siedemnaście** raportów, nie szesnaście.
+   Siedemnasty nazywa się „Zarejestrowane działalności - brak województwa"
+   i ma **714 771 wierszy, z czego 713 144 (99,8%) bez ani jednego pola adresu**.
+
+**Dlaczego drugi pomiar mylił.** W raportach wojewódzkich adres ma praktycznie
+każdy, bo **przypisanie do województwa bierze się właśnie z adresu**. Wpisy bez
+adresu nie mają jak trafić do żadnego z szesnastu i lądują w siedemnastym.
+Sprawdzenie jednego województwa nie mogło tego pokazać.
+
+**Podstawa prawna.** Adres do doręczeń jest obowiązkowy, ale stałe miejsce
+wykonywania działalności — tylko jeżeli przedsiębiorca takie miejsce **ma**.
+W formularzu CEIDG-1 zaznacza się „brak stałego miejsca" i wtedy w rejestrze
+jest adnotacja zamiast adresu. To nie jest obejście przepisu, tylko przewidziany
+przypadek dla pracujących mobilnie.
+
+**Co z tego wynika dla produktu.**
+
+* **Mapa zbiorcza nigdy nie pokaże 20% firm.** To nie jest luka do uzupełnienia
+  z PRG — tam nie ma czego geokodować. Trzeba to napisać przy mapie, inaczej
+  będzie wyglądać na kompletną.
+* Raport zawiera **3 328 wpisów oznaczonych jako „działalność prowadzona
+  wyłącznie w formie spółki cywilnej"**. Spółki cywilne to jedyna droga do
+  prawdziwej warstwy powiązań między osobami w CEIDG, a my tego pola nie czytamy.
+* Przy każdej analizie regionalnej te 714 tys. wypada z zestawienia **po cichu**.
+
+---
+
 ## 2026-08-31 — Test scalił 12 665 encji w bazie produkcyjnej
 
 **Co się stało.** Test integracyjny scalania adresów wywołał

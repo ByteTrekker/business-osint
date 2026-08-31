@@ -129,6 +129,13 @@ priorytetowi, nie chronologii.
       Dokładniejszy od Nominatima: dla adresu testowego różnica 75 m, bo PRG
       wskazuje punkt adresowy budynku, a Nominatim interpoluje wzdłuż ulicy.
 
+- [ ] **Spółki cywilne z CEIDG.** Raport „brak województwa" oznacza 3 328
+      wpisów jako „działalność prowadzona wyłącznie w formie spółki cywilnej".
+      To jedyna droga do prawdziwej warstwy powiązań między osobami w CEIDG —
+      dziś tego pola nie czytamy wcale.
+- [ ] **Napisać przy mapie, że 714 771 firm nie ma adresu.** To co piąty
+      przedsiębiorca; nie da się ich pokazać i mapa bez tej adnotacji wygląda
+      na kompletną.
 - [ ] **SUDOP** — pomoc publiczna i de minimis, na żądanie po NIP-ie.
       Aplikacja JSF bez API, ale ma eksport CSV.
 - [ ] **KRZ** — upadłości, restrukturyzacje, zakazy działalności, bezskuteczne
