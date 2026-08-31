@@ -19,6 +19,7 @@ Model tożsamości dla JDG:
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -30,10 +31,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import SourceKind
 from business_osint.domain.normalization import (
+    address_natural_key,
+    address_search_key,
     is_valid_nip,
     normalize_company_name,
     normalize_person_name,
 )
+from business_osint.etl.loaders import store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
 
 #: CEIDG podaje status jako całe zdanie po polsku (do 57 znaków), a kolumna
@@ -90,6 +94,8 @@ STAGE_COLUMNS = (
     "owner_normalized",
     "address_display",
     "address_normalized",
+    "address_search",
+    "address_id",
     "wojewodztwo",
     "company_id",
     "owner_id",
@@ -114,11 +120,14 @@ class CeidgStats:
     people: int = 0
     addresses: int = 0
     relationships: int = 0
+    #: Krawędzie z wcześniejszych importów, którym dopisano brakujące pochodzenie.
+    provenance_backfilled: int = 0
     errors: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "regions": self.regions,
+            "provenance_backfilled": self.provenance_backfilled,
             "rows_read": self.rows_read,
             "rows_staged": self.rows_staged,
             "companies": self.companies,
@@ -201,7 +210,13 @@ def prepare_row(row: dict[str, Any], *, region: str = "") -> tuple[str, ...] | N
         normalize_company_name(company_name),
         normalize_person_name(owner_display),
         address_display,
-        normalize_person_name(address_display).replace(" ", ""),
+        address_natural_key(address_display),
+        address_search_key(address_display),
+        # Identyfikator adresu wędruje przez tabelę pomocniczą tak samo jak firmy
+        # i właściciela. Wcześniej encję adresu łączyliśmy z wierszem po
+        # `normalized_name` — a to pole przestaje być kluczem naturalnym, bo od
+        # teraz niesie wyszukiwalną postać adresu, ze spacjami.
+        str(uuid.uuid4()),
         region,
         # Identyfikatory generujemy tutaj i przenosimy przez tabelę pomocniczą.
         # Wcześniejsza wersja łączyła encje po znormalizowanej nazwie — a że JDG
@@ -333,25 +348,32 @@ _INSERT_PERSON_DETAILS = text("""
     ON CONFLICT (entity_id) DO NOTHING
 """)
 
+# Encja adresu dostaje identyfikator z tabeli pomocniczej, a nie z `RETURNING`
+# złączonego po nazwie. Poprzednia wersja łączyła `entities.normalized_name`
+# z `address_normalized` — działało tylko dopóki oba pola trzymały tę samą
+# wartość. Teraz `normalized_name` niesie postać **wyszukiwalną**, ze spacjami,
+# a klucz naturalny został w `addresses.normalized`.
 _INSERT_ADDRESSES = text("""
     WITH nowe AS (
         SELECT DISTINCT ON (s.address_normalized)
-               s.address_normalized, s.address_display, s.miejscowosc,
-               s.ulica, s.budynek, s.lokal, s.kod,
+               s.address_id, s.address_normalized, s.address_display, s.address_search,
+               s.miejscowosc, s.ulica, s.budynek, s.lokal, s.kod,
                nullif(s.wojewodztwo, '') AS wojewodztwo
         FROM ceidg_stage s
         WHERE s.address_normalized <> ''
           AND NOT EXISTS (SELECT 1 FROM addresses a WHERE a.normalized = s.address_normalized)
     ), wstawione AS (
         INSERT INTO entities (id, entity_type, display_name, normalized_name)
-        SELECT gen_random_uuid(), 'address', address_display, address_normalized FROM nowe
-        RETURNING id, normalized_name
+        SELECT address_id::uuid, 'address', address_display, address_search FROM nowe
+        ON CONFLICT DO NOTHING
+        RETURNING id
     )
     INSERT INTO addresses (entity_id, city, street, building, unit, postal_code,
                            voivodeship, normalized)
-    SELECT w.id, n.miejscowosc, n.ulica, nullif(n.budynek, ''), nullif(n.lokal, ''),
-           n.kod, n.wojewodztwo, n.address_normalized
-    FROM nowe n JOIN wstawione w ON w.normalized_name = n.address_normalized
+    SELECT n.address_id::uuid, n.miejscowosc, n.ulica, nullif(n.budynek, ''),
+           nullif(n.lokal, ''), n.kod, n.wojewodztwo, n.address_normalized
+    FROM nowe n
+    WHERE EXISTS (SELECT 1 FROM wstawione w WHERE w.id = n.address_id::uuid)
     ON CONFLICT (normalized) DO NOTHING
 """)
 
@@ -364,26 +386,119 @@ _BACKFILL_VOIVODESHIP = text("""
       AND nullif(s.wojewodztwo, '') IS NOT NULL
 """)
 
+# Krawędzie i ich pochodzenie powstają w **jednej instrukcji**, przez CTE
+# z RETURNING. Rozdzielenie tego na dwa kroki było pierwotnym błędem: import
+# masowy wstawiał relacje zbiorczym SQL-em i nie dotykał `relationship_sources`,
+# przez co 6 392 682 z 6 466 459 krawędzi w bazie nie miało źródła — 98,9%
+# grafu i złamany niezmiennik N2. Kontrola `check-data` to wykryła.
+#
+# Dokumentem źródłowym jest **raport**, nie podmiot. CEIDG udostępnia dane
+# hurtowo w plikach CSV; tworzenie 3,5 mln dokumentów po jednym na firmę
+# opisywałoby rzeczywistość fałszywie. Wiersz w raporcie wskazuje `locator`.
 _INSERT_OWNER_EDGES = text("""
-    INSERT INTO relationships (id, source_entity_id, target_entity_id, relationship_type,
-                               role, valid_from, valid_to, confidence, confidence_score)
-    SELECT gen_random_uuid(), s.owner_id::uuid, s.company_id::uuid, 'sole_proprietor_of',
-           'WŁAŚCICIEL', nullif(s.data_rozpoczecia, '')::date,
-           nullif(s.data_zakonczenia, '')::date, 'registered', 1.0
-    FROM ceidg_stage s
-    WHERE s.nazwisko <> '' AND s.owner_id <> s.company_id
+    WITH wstawione AS (
+        INSERT INTO relationships (id, source_entity_id, target_entity_id, relationship_type,
+                                   role, valid_from, valid_to, confidence, confidence_score)
+        SELECT gen_random_uuid(), s.owner_id::uuid, s.company_id::uuid, 'sole_proprietor_of',
+               'WŁAŚCICIEL', nullif(s.data_rozpoczecia, '')::date,
+               nullif(s.data_zakonczenia, '')::date, 'registered', 1.0
+        FROM ceidg_stage s
+        WHERE s.nazwisko <> '' AND s.owner_id <> s.company_id
+        ON CONFLICT DO NOTHING
+        RETURNING id, source_entity_id, target_entity_id
+    )
+    INSERT INTO relationship_sources (relationship_id, raw_document_id, locator)
+    SELECT w.id, CAST(:raw_document_id AS uuid), 'nip:' || s.nip
+    FROM wstawione w
+    JOIN ceidg_stage s ON s.owner_id::uuid = w.source_entity_id
+                      AND s.company_id::uuid = w.target_entity_id
     ON CONFLICT DO NOTHING
 """)
 
 _INSERT_ADDRESS_EDGES = text("""
-    INSERT INTO relationships (id, source_entity_id, target_entity_id, relationship_type,
-                               valid_from, confidence, confidence_score)
-    SELECT gen_random_uuid(), s.company_id::uuid, a.entity_id, 'registered_at',
-           nullif(s.data_rozpoczecia, '')::date, 'registered', 1.0
+    WITH wstawione AS (
+        INSERT INTO relationships (id, source_entity_id, target_entity_id, relationship_type,
+                                   valid_from, confidence, confidence_score)
+        SELECT gen_random_uuid(), s.company_id::uuid, a.entity_id, 'registered_at',
+               nullif(s.data_rozpoczecia, '')::date, 'registered', 1.0
+        FROM ceidg_stage s
+        JOIN addresses a ON a.normalized = s.address_normalized
+        WHERE s.address_normalized <> '' AND s.company_id::uuid <> a.entity_id
+        ON CONFLICT DO NOTHING
+        RETURNING id, source_entity_id, target_entity_id
+    )
+    INSERT INTO relationship_sources (relationship_id, raw_document_id, locator)
+    SELECT w.id, CAST(:raw_document_id AS uuid), 'nip:' || s.nip
+    FROM wstawione w
+    JOIN addresses a ON a.entity_id = w.target_entity_id
+    JOIN ceidg_stage s ON s.company_id::uuid = w.source_entity_id
+                      AND s.address_normalized = a.normalized
+    ON CONFLICT DO NOTHING
+""")
+
+
+# --- Naprawa wierszy zaimportowanych wcześniej ---------------------------------
+#
+# Wstawianie idzie z `ON CONFLICT DO NOTHING`, więc ponowny import **nie tyka**
+# tego, co już jest w bazie. Bez poniższych instrukcji reimport przeszedłby bez
+# skutku: krawędzie dalej byłyby bez pochodzenia, a adresy w starym formacie.
+#
+# Świadomie naprawiamy w miejscu, zamiast czyścić i ładować od nowa. Wyczyszczenie
+# to skasowanie 9,5 mln encji i 6,4 mln krawędzi — operacja nieodwracalna, przy
+# której każdy błąd kosztuje dobę pobierania. UPDATE jest wolniejszy i brzydszy,
+# ale da się go powtórzyć.
+
+_BACKFILL_OWNER_PROVENANCE = text("""
+    INSERT INTO relationship_sources (relationship_id, raw_document_id, locator)
+    SELECT r.id, CAST(:raw_document_id AS uuid), 'nip:' || s.nip
+    FROM ceidg_stage s
+    JOIN relationships r ON r.source_entity_id = s.owner_id::uuid
+                        AND r.target_entity_id = s.company_id::uuid
+                        AND r.relationship_type = 'sole_proprietor_of'
+    WHERE NOT EXISTS (
+        SELECT 1 FROM relationship_sources rs WHERE rs.relationship_id = r.id
+    )
+    ON CONFLICT DO NOTHING
+""")
+
+_BACKFILL_ADDRESS_PROVENANCE = text("""
+    INSERT INTO relationship_sources (relationship_id, raw_document_id, locator)
+    SELECT r.id, CAST(:raw_document_id AS uuid), 'nip:' || s.nip
     FROM ceidg_stage s
     JOIN addresses a ON a.normalized = s.address_normalized
-    WHERE s.address_normalized <> '' AND s.company_id::uuid <> a.entity_id
+    JOIN relationships r ON r.source_entity_id = s.company_id::uuid
+                        AND r.target_entity_id = a.entity_id
+                        AND r.relationship_type = 'registered_at'
+    WHERE s.address_normalized <> ''
+      AND NOT EXISTS (
+          SELECT 1 FROM relationship_sources rs WHERE rs.relationship_id = r.id
+      )
     ON CONFLICT DO NOTHING
+""")
+
+#: Numer budynku i lokalu trafiały wcześniej wyłącznie do napisu adresu, a kolumny
+#: zostawały puste. Bez nich nie da się dopasować adresu do punktu adresowego PRG.
+_BACKFILL_ADDRESS_PARTS = text("""
+    UPDATE addresses a
+    SET building = nullif(s.budynek, ''),
+        unit = nullif(s.lokal, '')
+    FROM ceidg_stage s
+    WHERE a.normalized = s.address_normalized
+      AND a.building IS NULL
+      AND nullif(s.budynek, '') IS NOT NULL
+""")
+
+#: Zapis adresu: `ul. Kąty 14/2, 34-443 Sromowce Wyżne`, a nie człony rozdzielone
+#: przecinkami. Poprawka formatu powstała po imporcie, więc istniejące encje
+#: adresów niosą jeszcze stary napis.
+_BACKFILL_ADDRESS_DISPLAY = text("""
+    UPDATE entities e
+    SET display_name = s.address_display
+    FROM ceidg_stage s
+    WHERE e.id = (SELECT a.entity_id FROM addresses a
+                  WHERE a.normalized = s.address_normalized)
+      AND e.entity_type = 'address'
+      AND e.display_name IS DISTINCT FROM s.address_display
 """)
 
 
@@ -396,8 +511,15 @@ async def _run(session: AsyncSession, statement: Any) -> int:
         return 0
 
 
-async def load_staged(session: AsyncSession, stats: CeidgStats) -> None:
-    """Przenosi zawartość tabeli pomocniczej do modelu grafu."""
+async def load_staged(
+    session: AsyncSession, stats: CeidgStats, *, raw_document_id: uuid.UUID
+) -> None:
+    """Przenosi zawartość tabeli pomocniczej do modelu grafu.
+
+    ``raw_document_id`` jest wymagany, nie opcjonalny. Krawędź bez pochodzenia
+    łamie niezmiennik N2, a domyślna wartość oznaczałaby, że da się ją stworzyć
+    przez przeoczenie — dokładnie tak powstało 6,39 mln krawędzi bez źródła.
+    """
     await session.execute(_DEDUPE_STAGE)
     await session.execute(_RESOLVE_EXISTING_COMPANIES)
     await session.execute(_RESOLVE_EXISTING_OWNERS)
@@ -411,8 +533,20 @@ async def load_staged(session: AsyncSession, stats: CeidgStats) -> None:
     # Adresy wczytane wcześniej istnieją już w bazie, więc INSERT je pomija —
     # województwo trzeba im uzupełnić osobno.
     await session.execute(_BACKFILL_VOIVODESHIP)
+    # Najpierw naprawa tego, co już jest, potem wstawianie nowego. Odwrotna
+    # kolejność działa tak samo, ale ta czyta się zgodnie z intencją: reimport
+    # ma **dokończyć** poprzedni, a nie tylko dołożyć.
+    await session.execute(_BACKFILL_ADDRESS_PARTS)
+    await session.execute(_BACKFILL_ADDRESS_DISPLAY)
+    for statement in (_BACKFILL_OWNER_PROVENANCE, _BACKFILL_ADDRESS_PROVENANCE):
+        result = await session.execute(statement, {"raw_document_id": raw_document_id})
+        stats.provenance_backfilled += cast(CursorResult[Any], result).rowcount or 0
+
     for statement in (_INSERT_OWNER_EDGES, _INSERT_ADDRESS_EDGES):
-        result = await session.execute(statement)
+        # rowcount dotyczy zewnętrznego INSERT-a, czyli wpisów pochodzenia.
+        # Odpowiada liczbie krawędzi jeden do jednego, bo CTE zwraca dokładnie
+        # te, które faktycznie weszły.
+        result = await session.execute(statement, {"raw_document_id": raw_document_id})
         stats.relationships += cast(CursorResult[Any], result).rowcount or 0
     await session.execute(text("TRUNCATE ceidg_stage"))
 
@@ -463,8 +597,25 @@ async def import_all_regions(
                 await session.execute(text("SET LOCAL statement_timeout = '30min'"))
                 await session.execute(_DROP_STAGE)
                 await session.execute(_CREATE_STAGE)
-                await get_or_create_source(
+                source_id = await get_or_create_source(
                     session, SourceKind.CEIDG, "dane.biznes.gov.pl", "https://dane.biznes.gov.pl"
+                )
+                # Dokumentem źródłowym jest raport, nie podmiot. Payload trzyma
+                # metadane, nie treść: archiwum ma dziesiątki megabajtów, a do
+                # wykazania integralności wystarczy suma kontrolna.
+                document_id, _ = await store_raw_document(
+                    session,
+                    source_id=source_id,
+                    external_id=f"{report.id}",
+                    url=report.url,
+                    fetched_at=dt.datetime.now(dt.UTC),
+                    content_sha256=hashlib.sha256(payload).hexdigest(),
+                    payload={
+                        "name": report.name,
+                        "region": report.region,
+                        "created_at": report.created_at,
+                        "bytes": len(payload),
+                    },
                 )
                 batch: list[tuple[str, ...]] = []
                 for row in iter_report_rows(payload):
@@ -477,7 +628,7 @@ async def import_all_regions(
                         stats.rows_staged += await stage_rows(session, batch)
                         batch.clear()
                 stats.rows_staged += await stage_rows(session, batch)
-                await load_staged(session, stats)
+                await load_staged(session, stats, raw_document_id=document_id)
 
             stats.regions += 1
             if progress is not None:

@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
+import Pager from "@/components/Pager";
+import CoLocated from "@/components/CoLocated";
 import { RelationshipGraph } from "@/components/RelationshipGraph";
 import { CompanyFacts } from "@/components/CompanyFacts";
+import CompanyHistory from "@/components/CompanyHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +28,20 @@ function formatPeriod(from: string | null, to: string | null): string {
   return `${from ?? "?"} → ${to ?? "obecnie"}`;
 }
 
-export default async function EntityPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EntityPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ rel?: string; loc?: string }>;
+}) {
   const { id } = await params;
+  const { rel, loc } = await searchParams;
+  const relOffset = Math.max(0, Number.parseInt(rel ?? "0", 10) || 0);
+  const locOffset = Math.max(0, Number.parseInt(loc ?? "0", 10) || 0);
   const [profile, relationships] = await Promise.all([
     api.entity(id).catch(() => null),
-    api.relationships(id).catch(() => []),
+    api.relationships(id, relOffset).catch(() => null),
   ]);
   if (!profile) notFound();
 
@@ -51,6 +63,9 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
       </p>
 
       <CompanyFacts profile={profile} />
+      <CompanyHistory
+        attributes={(profile.company?.attributes as Record<string, unknown> | undefined) ?? null}
+      />
 
       <section>
         <h2>Graf powiązań</h2>
@@ -59,7 +74,7 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
       </section>
 
       <section>
-        <h2>Powiązania ({relationships.length})</h2>
+        <h2>Powiązania ({relationships?.meta.total ?? 0})</h2>
         <table className="rels">
           <thead>
             <tr>
@@ -70,7 +85,7 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
             </tr>
           </thead>
           <tbody>
-            {relationships.map((rel) => (
+            {(relationships?.items ?? []).map((rel) => (
               <tr key={rel.id} className={rel.valid_to ? "rels__row--historical" : undefined}>
                 <td>
                   <Link href={`/entity/${rel.other_id}`}>{rel.other_name}</Link>
@@ -97,7 +112,16 @@ export default async function EntityPage({ params }: { params: Promise<{ id: str
             ))}
           </tbody>
         </table>
+        {relationships && (
+          <Pager
+            meta={relationships.meta}
+            href={(next) => `/entity/${id}?rel=${next}`}
+            noun="powiązań"
+          />
+        )}
       </section>
+
+      <CoLocated entityId={id} offset={locOffset} href={(next) => `/entity/${id}?loc=${next}`} />
     </>
   );
 }

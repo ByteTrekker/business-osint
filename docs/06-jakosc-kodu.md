@@ -19,6 +19,7 @@ odtworzyć lokalnie, zamienia się w loterię — commit, push, czekanie, popraw
 | migracje | `alembic upgrade head` | migracja, której nie da się nałożyć | `make migrate` |
 | zgodność modeli z migracjami | `alembic check` | rozjazd między modelami SQLAlchemy a schematem w bazie | `make migration-check` |
 | integracja | `pytest -m integration` | błędny SQL, złe typy parametrów, błędy widoku i indeksów | `make test-integration` |
+| niezmienniki na danych | `check-data` | naruszenia N1–N4 w rzeczywistym zbiorze — fałszywe scalenia, krawędzie bez pochodzenia | `make data-check` |
 | podatności (Python) | `pip-audit` | znane CVE w zależnościach | `make audit` |
 | styl (TS) | `eslint` | błędy Reacta/Next, reguły dostępności | `make lint` |
 | formatowanie (TS) | `prettier --check` | j.w. dla frontendu | `make lint` |
@@ -29,8 +30,8 @@ odtworzyć lokalnie, zamienia się w loterię — commit, push, czekanie, popraw
 | aktualność zależności | Dependabot | przeterminowane zależności, cotygodniowo | — |
 
 ```bash
-make check   # wszystko, co da się sprawdzić bez bazy
-make test-integration migration-check   # reszta, wymaga Postgresa
+make check      # wszystko, co da się sprawdzić bez bazy
+make check-db   # reszta: migracje, testy integracyjne, niezmienniki na danych
 ```
 
 ## Dlaczego akurat te bramki
@@ -130,7 +131,30 @@ Sprawdza: białe znaki, poprawność YAML/TOML, wielkość plików, klucze prywa
 `ruff` z autopoprawką, `ruff format`, blokadę commitów na `main` oraz konwencję
 komunikatu commita.
 
-Pełny zestaw uruchamia `make check`.
+Pełny zestaw uruchamia `make check`, a część wymagającą Postgresa — `make check-db`.
+
+## Dlaczego kontrole danych nie są w CI
+
+`check-data` sprawdza **dane**, nie kod. Baza w CI jest pusta po migracjach, więc
+każda kontrola przeszłaby tam zawsze i nie znaczyłaby nic. Wartość pojawia się
+dopiero na rzeczywistym zbiorze.
+
+W CI biegnie za to coś innego i ważniejszego: **testy samych kontroli**. Każdy
+sadzi konkretne naruszenie i sprawdza, czy kontrola je widzi. To wyłapało dwie
+asercje, których nie dało się zapalić, bo baza wymusza je ograniczeniem `CHECK`.
+
+Na danych kontrole uruchamiają się dwiema drogami:
+
+* **automatycznie po każdym imporcie** — każda komenda ETL kończy się werdyktem.
+  Raport nie przerywa procesu kodem błędu: kontrole mierzą stan całej bazy, więc
+  import, który zrobił swoje, nie może wyglądać na nieudany z powodu długu sprzed
+  tygodnia.
+* **jako twarda bramka** przez `make data-check`, z kodem wyjścia 1.
+
+Ten podział wziął się z konkretnej awarii. Moduł kontroli powstał z opisem
+„uruchamiane po imporcie" i przez chwilę nie wołała go żadna komenda — dokładnie
+to samo przeoczenie, przez które nikt nie napisał zapytania wykrywającego 69 tys.
+fałszywych scaleń.
 
 ## Kiedy podnosić progi
 

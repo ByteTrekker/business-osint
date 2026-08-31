@@ -120,7 +120,15 @@ def _name_stage(condition: str, base: float, span: float) -> Any:
             LIMIT :candidates
         ) e
         LEFT JOIN companies c ON c.entity_id = e.id
-        ORDER BY score DESC, length(e.normalized_name), e.degree DESC
+        -- Filtr statusu **po** złączeniu, bo status mieszka w `companies`.
+        -- Wciągnięcie go do podzapytania oznaczałoby złączenie na całej puli
+        -- kandydatów zamiast na wycinku, który i tak przechodzi przez ranking.
+        WHERE CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text)
+        -- `e.id` na końcu nie jest ozdobnikiem: bez niego wiersze o równej
+        -- trafności wracają w kolejności zależnej od planu, a wtedy przy
+        -- stronicowaniu ten sam podmiot potrafi pojawić się dwa razy albo
+        -- zniknąć między stronami.
+        ORDER BY score DESC, length(e.normalized_name), e.degree DESC, e.id
         LIMIT :limit
     """  # noqa: S608
     )
@@ -130,6 +138,20 @@ def _name_stage(condition: str, base: float, span: float) -> Any:
 # się do tego samego, więc ten etap trafia w spółkę mimo różnicy w zapisie.
 _BY_EXACT_NAME = _name_stage("normalized_name = :normalized", 0.90, 0.09)
 
+# Dopasowanie po **zbiorze słów**, niezależne od kolejności. „termika orlen"
+# trafia w ORLEN TERMIKA, czego żaden prefiks nie zrobi, a trigram robi
+# w setkach milisekund zamiast w 0,15 ms.
+#
+# Semantyka jest koniunkcyjna: wszystkie słowa zapytania muszą wystąpić.
+# Alternatywa („którekolwiek") dla „jan kowalski" zwróciłaby setki tysięcy
+# wierszy, więc zapytania z wyrazami spoza nazwy — jak „PKN ORLEN", gdzie
+# w bazie jest samo „orlen" — obsługuje dopiero trigram na końcu.
+_BY_WORDS = _name_stage(
+    "to_tsvector('simple', normalized_name) @@ plainto_tsquery('simple', :normalized)",
+    0.55,
+    0.14,
+)
+
 # Prefiks kończący się na granicy słowa: „orlen termika" tak, „orlena" nie.
 # Spacja to najniższy drukowalny znak, więc `LIKE 'orlen %'` to wąski zakres
 # na tym samym indeksie btree co prefiks szeroki — dodatkowy etap nic nie kosztuje.
@@ -137,25 +159,29 @@ _BY_WORD_PREFIX = _name_stage("normalized_name LIKE :word_prefix", 0.70, 0.19)
 
 # Prefiks dowolny — obsługuje pisanie w trakcie („orlen ter") i wpadające przy
 # okazji „orlena". Świadomie ostatni z etapów prefiksowych.
-_BY_PREFIX = _name_stage("normalized_name LIKE :prefix", 0.40, 0.29)
+_BY_PREFIX = _name_stage("normalized_name LIKE :prefix", 0.40, 0.14)
 
 _BY_SURNAME = text("""
     SELECT e.id, e.entity_type, e.display_name, e.degree, 0.35::float8 AS score
     FROM people p
     JOIN entities e ON e.id = p.entity_id AND e.merged_into_id IS NULL
     WHERE p.last_name = :surname
-    ORDER BY e.degree DESC
+    ORDER BY e.degree DESC, e.id
     LIMIT :limit
 """)
 
+# Filtr statusu obowiązuje także tutaj. Etap ostatni, który po cichu ignoruje
+# zawężenie wybrane przez użytkownika, jest gorszy niż brak wyników.
 _BY_TRIGRAM = text("""
     SELECT e.id, e.entity_type, e.display_name, e.degree,
            (0.30 + similarity(e.normalized_name, :normalized) * 0.09)::float8 AS score
     FROM entities e
+    LEFT JOIN companies c ON c.entity_id = e.id
     WHERE e.merged_into_id IS NULL
       AND e.normalized_name % :normalized
       AND (CAST(:entity_type AS text) IS NULL OR e.entity_type = CAST(:entity_type AS text))
-    ORDER BY score DESC, e.degree DESC
+      AND (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
+    ORDER BY score DESC, e.degree DESC, e.id
     LIMIT :limit
 """)
 
@@ -177,18 +203,35 @@ class EntityRepository:
         query: str,
         *,
         entity_type: str | None = None,
+        status: str | None = None,
         limit: int = 20,
+        offset: int = 0,
         fuzzy: bool = False,
-    ) -> list[SearchHit]:
+    ) -> tuple[list[SearchHit], bool]:
         """Szuka podmiotu, przechodząc od najtańszej metody do najdroższej.
+
+        ``status`` zawęża do podmiotów o danym stanie (`active`, `suspended`,
+        `inactive`). Nie dotyczy wyszukiwania po identyfikatorze: kto podał NIP,
+        chce tę encję, a nie komunikat, że jest zawieszona.
 
         ``fuzzy`` wymusza dopasowanie trigramowe. Domyślnie uruchamia się ono
         wyłącznie wtedy, gdy tańsze etapy nie zwróciły nic — kosztuje
         setki milisekund, a nie jednostki, więc nie może być ścieżką pierwszą.
+
+        Zwraca stronę wyników i informację, **czy jest coś dalej**. Nie zwraca
+        liczby wszystkich dopasowań: policzenie ich oznaczałoby przejście przez
+        cały zbiór, a dla prefiksu „a" to 830 tys. wierszy. Stronicowanie jest
+        przesunięciem, nie kursorem — etapy mają rozłączne przedziały wyniku,
+        więc kolejność jest stabilna, a przy realnym przeglądaniu (kilka stron)
+        koszt pobrania `offset + limit + 1` pozostaje w milisekundach. Głębokie
+        przesunięcia są świadomie ograniczone w warstwie HTTP.
         """
+        # Pobieramy o jeden więcej, niż zwrócimy: obecność tego wiersza jest
+        # jedyną tanią odpowiedzią na pytanie „czy jest następna strona".
+        needed = offset + limit + 1
         cleaned = query.strip()
         if not cleaned:
-            return []
+            return [], False
 
         rows: list[Any] = []
         seen: set[uuid.UUID] = set()
@@ -201,7 +244,7 @@ class EntityRepository:
 
         identifier = self._identifier_candidate(cleaned)
         if identifier:
-            take(await self._fetch(_BY_IDENTIFIER, {"identifier": identifier, "limit": limit}))
+            take(await self._fetch(_BY_IDENTIFIER, {"identifier": identifier, "limit": needed}))
 
         normalized = normalize_company_name(cleaned) or cleaned.lower()
         if normalized:
@@ -213,39 +256,66 @@ class EntityRepository:
                 "word_prefix": f"{normalized} %",
                 "prefix": f"{normalized}%",
                 "entity_type": entity_type,
-                "candidates": _CANDIDATE_POOL,
+                "status": status,
+                # Pula kandydatów musi pomieścić stronę, do której schodzimy —
+                # inaczej przy większym przesunięciu ranking miałby z czego
+                # wybierać mniej, niż wynosi żądany wycinek.
+                "candidates": max(_CANDIDATE_POOL, needed),
             }
-            for stage in (_BY_EXACT_NAME, _BY_WORD_PREFIX, _BY_PREFIX):
-                if len(rows) >= limit:
+            # Każdy etap pyta o **pełną** liczbę wierszy, nie o brakującą różnicę.
+            # Etap szerokiego prefiksu zwraca nadzbiór dwóch poprzednich, więc
+            # limit pomniejszony o to, co już mamy, zjadały duplikaty odrzucane
+            # dopiero po pobraniu. Objawiało się to gubieniem wyników na dalszych
+            # stronach: przy `offset=20` wracał jeden wiersz zamiast trzech.
+            for stage in (_BY_EXACT_NAME, _BY_WORD_PREFIX, _BY_WORDS, _BY_PREFIX):
+                if len(rows) >= needed:
                     break
-                take(await self._fetch(stage, {**params, "limit": limit - len(rows)}))
+                take(await self._fetch(stage, {**params, "limit": needed}))
 
         # Nazwiska w CEIDG są zapisane wielkimi literami; szukamy ostatniego słowa,
         # bo użytkownik pisze „Jan Kowalski", a indeks stoi na samym nazwisku.
-        if len(rows) < limit and entity_type in (None, "person"):
+        if len(rows) < needed and entity_type in (None, "person"):
             surname = cleaned.split()[-1].upper()
             if len(surname) > 2:
                 take(
-                    await self._fetch(_BY_SURNAME, {"surname": surname, "limit": limit - len(rows)})
+                    await self._fetch(
+                        _BY_SURNAME, {"surname": surname, "limit": needed - len(rows)}
+                    )
                 )
 
         # Trigram włączamy także **bez** prośby użytkownika, o ile tanie etapy
         # nie znalazły niczego. „PKN ORLEN" nie jest prefiksem żadnej nazwy
         # w bazie, więc dawało pustą listę mimo że ORLEN S.A. tam jest. Koszt
         # 140–250 ms płacimy wyłącznie za wynik, który i tak byłby pusty.
-        if (fuzzy or not rows) and len(rows) < limit and len(normalized) >= 3:
+        if (fuzzy or not rows) and len(rows) < needed and len(normalized) >= 3:
             take(
                 await self._fetch(
                     _BY_TRIGRAM,
                     {
                         "normalized": normalized,
                         "entity_type": entity_type,
-                        "limit": limit - len(rows),
+                        "status": status,
+                        "limit": needed,
                     },
                 )
             )
 
-        return await self._to_hits(rows[:limit])
+        has_more = len(rows) > offset + limit
+        page = rows[offset : offset + limit]
+        return await self._to_hits(page), has_more
+
+    async def co_located(
+        self, entity_id: uuid.UUID, *, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Inne podmioty pod tym samym adresem. Przyjmuje id podmiotu albo id adresu."""
+        rows = await self._session.execute(
+            _CO_LOCATED, {"id": entity_id, "limit": limit, "offset": offset}
+        )
+        return [dict(row) for row in rows.mappings()]
+
+    async def count_co_located(self, entity_id: uuid.UUID) -> int:
+        """Ilu sąsiadów ma podmiot pod swoim adresem."""
+        return int((await self._session.execute(_CO_LOCATED_COUNT, {"id": entity_id})).scalar_one())
 
     @staticmethod
     def _identifier_candidate(query: str) -> str | None:
@@ -413,8 +483,40 @@ class EntityRepository:
         )
         return [dict(row) for row in rows.mappings()]
 
+    async def count_relationships(
+        self, entity_id: uuid.UUID, *, include_historical: bool = True
+    ) -> int:
+        """Ile powiązań ma podmiot. Liczymy dokładnie, bo to jedno tanie zapytanie.
+
+        `entities.degree` tu nie wystarczy: liczy obie strony krawędzi bez
+        filtra historyczności, a zakładka pokazuje kierunek wychodzący i potrafi
+        ukryć zakończone. Podanie stopnia jako liczby wyników byłoby liczbą
+        wyglądającą na prawdziwą.
+        """
+        return int(
+            (
+                await self._session.execute(
+                    text("""
+                    SELECT count(*)
+                    FROM graph_edges e
+                    JOIN entities n ON n.id = e.to_id AND n.merged_into_id IS NULL
+                    WHERE e.from_id = :id
+                      AND e.superseded_at IS NULL
+                      AND (:include_historical
+                           OR e.valid_to IS NULL OR e.valid_to >= CURRENT_DATE)
+                    """),
+                    {"id": entity_id, "include_historical": include_historical},
+                )
+            ).scalar_one()
+        )
+
     async def relationships(
-        self, entity_id: uuid.UUID, *, include_historical: bool = True, limit: int = 200
+        self,
+        entity_id: uuid.UUID,
+        *,
+        include_historical: bool = True,
+        limit: int = 200,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         """Płaska lista powiązań podmiotu wraz z provenance — do zakładki „Powiązania”."""
         rows = (
@@ -442,14 +544,74 @@ class EntityRepository:
                     WHERE e.from_id = :id
                       AND e.superseded_at IS NULL
                       AND (:include_historical OR e.valid_to IS NULL OR e.valid_to >= CURRENT_DATE)
-                    ORDER BY (e.valid_to IS NULL) DESC, e.valid_from DESC NULLS LAST
-                    LIMIT :limit
+                    ORDER BY (e.valid_to IS NULL) DESC, e.valid_from DESC NULLS LAST,
+                             e.relationship_id
+                    LIMIT :limit OFFSET :offset
                     """
                     ),
-                    {"id": entity_id, "include_historical": include_historical, "limit": limit},
+                    {
+                        "id": entity_id,
+                        "include_historical": include_historical,
+                        "limit": limit,
+                        "offset": offset,
+                    },
                 )
             )
             .mappings()
             .all()
         )
         return [dict(row) for row in rows]
+
+
+# „Kto jeszcze siedzi pod tym adresem" jest w tym produkcie pytaniem pierwszej
+# kategorii, nie ciekawostką: wspólny adres to najczęstszy widoczny ślad
+# powiązania między spółkami, których nie łączy ani wspólnik, ani nazwa.
+#
+# Zapytanie przyjmuje **id podmiotu albo id adresu**. Użytkownik ogląda profil
+# firmy i chce sąsiadów jej siedziby; wymaganie, żeby najpierw kliknął w adres,
+# byłoby przerzuceniem na niego pracy, którą baza umie wykonać jednym złączeniem.
+_CO_LOCATED = text("""
+    WITH adres AS (
+        SELECT CASE
+                 WHEN EXISTS (SELECT 1 FROM addresses a WHERE a.entity_id = :id) THEN :id
+                 ELSE (SELECT r.target_entity_id FROM relationships r
+                       WHERE r.source_entity_id = :id
+                         AND r.relationship_type = 'registered_at'
+                         AND r.superseded_at IS NULL
+                       ORDER BY (r.valid_to IS NULL) DESC, r.valid_from DESC NULLS LAST
+                       LIMIT 1)
+               END AS id
+    )
+    SELECT e.id, e.entity_type, e.display_name, e.degree,
+           c.nip, c.krs, c.status, r.valid_from, r.valid_to
+    FROM adres
+    JOIN relationships r ON r.target_entity_id = adres.id
+                        AND r.relationship_type = 'registered_at'
+                        AND r.superseded_at IS NULL
+    JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
+    LEFT JOIN companies c ON c.entity_id = e.id
+    WHERE e.id <> :id
+    ORDER BY (r.valid_to IS NULL) DESC, e.degree DESC, e.display_name
+    LIMIT :limit OFFSET :offset
+""")
+
+_CO_LOCATED_COUNT = text("""
+    WITH adres AS (
+        SELECT CASE
+                 WHEN EXISTS (SELECT 1 FROM addresses a WHERE a.entity_id = :id) THEN :id
+                 ELSE (SELECT r.target_entity_id FROM relationships r
+                       WHERE r.source_entity_id = :id
+                         AND r.relationship_type = 'registered_at'
+                         AND r.superseded_at IS NULL
+                       ORDER BY (r.valid_to IS NULL) DESC, r.valid_from DESC NULLS LAST
+                       LIMIT 1)
+               END AS id
+    )
+    SELECT count(*)
+    FROM adres
+    JOIN relationships r ON r.target_entity_id = adres.id
+                        AND r.relationship_type = 'registered_at'
+                        AND r.superseded_at IS NULL
+    JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
+    WHERE e.id <> :id
+""")

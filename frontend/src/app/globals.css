@@ -378,3 +378,103 @@ h2 {
   border-radius: 12px;
   background: var(--bg);
 }
+
+/* Historia z KRS — jedyne miejsce, gdzie widać, że coś było inaczej. */
+.history {
+  margin-top: 2rem;
+}
+.history__block {
+  margin-top: 1.25rem;
+}
+.history__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1rem;
+  border-left: 2px solid var(--line);
+}
+.history__item {
+  position: relative;
+  padding: 0.35rem 0 0.35rem 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+}
+.history__item::before {
+  content: "";
+  position: absolute;
+  left: -0.32rem;
+  top: 0.85rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--line);
+}
+.history__item--current::before {
+  background: var(--accent);
+}
+.history__value {
+  font-weight: 500;
+}
+.history__item--current .history__value {
+  color: var(--accent);
+}
+.history__period {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.history__note {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Nawigacja stron — bez numerów, bo wyszukiwarka nie zna liczby wszystkich
+   dopasowań i zmyślona liczba stron byłaby gorsza od jej braku. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.pager__link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.pager__link:hover {
+  text-decoration: underline;
+}
+.pager__link--off {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
+}
+.pager__range {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Filtr stanu w formularzu wyszukiwania. */
+.search select {
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}

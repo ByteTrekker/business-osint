@@ -23,9 +23,31 @@ class SearchHitOut(BaseModel):
     degree: int
 
 
+class PageMeta(BaseModel):
+    """Ile poprosiliśmy, ile dostaliśmy i czy zostało coś dalej.
+
+    Niezmiennik N3 mówi, że przycięcie wyniku jest częścią kontraktu, a nie
+    cichą decyzją serwera. Bez tej struktury lista ucięta na dwustu wierszach
+    wygląda dokładnie tak samo jak lista, która na dwustu się kończy.
+
+    ``total`` bywa ``None`` świadomie. Dla powiązań policzenie ich jest tanie
+    i podajemy dokładną liczbę. Dla wyszukiwania pełny przelicznik oznaczałby
+    przejście przez wszystkie dopasowania — przy prefiksie „a" to 830 tys.
+    wierszy — więc mówimy tylko, czy jest coś dalej. Zmyślona liczba byłaby
+    gorsza od przyznania się do jej braku.
+    """
+
+    limit: int
+    offset: int
+    returned: int
+    has_more: bool
+    total: int | None = None
+
+
 class SearchResultOut(BaseModel):
     query: str
     hits: list[SearchHitOut]
+    meta: PageMeta
 
 
 class ProvenanceOut(BaseModel):
@@ -51,6 +73,36 @@ class RelationshipOut(BaseModel):
     confidence: str
     attributes: dict[str, Any] = Field(default_factory=dict)
     provenance: list[ProvenanceOut] = Field(default_factory=list)
+
+
+class RelationshipPageOut(BaseModel):
+    """Powiązania podmiotu razem z informacją o przycięciu.
+
+    Wcześniej endpoint zwracał gołą listę. Przy limicie 200 i podmiocie
+    z tysiącem krawędzi klient nie miał **żadnego** sygnału, że czegoś nie widzi.
+    """
+
+    items: list[RelationshipOut]
+    meta: PageMeta
+
+
+class CoLocatedOut(BaseModel):
+    """Podmiot dzielący adres z oglądanym."""
+
+    id: uuid.UUID
+    type: str
+    name: str
+    nip: str | None = None
+    krs: str | None = None
+    status: str | None = None
+    valid_from: dt.date | None = None
+    valid_to: dt.date | None = None
+    degree: int
+
+
+class CoLocatedPageOut(BaseModel):
+    items: list[CoLocatedOut]
+    meta: PageMeta
 
 
 class FinancialReportOut(BaseModel):

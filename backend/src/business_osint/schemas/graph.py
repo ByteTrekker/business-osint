@@ -41,6 +41,15 @@ class GraphMeta(BaseModel):
     edge_count: int
     truncated: bool = Field(description="True, gdy wynik został przycięty przez budżet zapytania")
     suppressed_hubs: int = Field(description="Liczba węzłów-hubów, których celowo nie rozwinięto")
+    collapsed_sole_traders: int = Field(
+        default=0,
+        description=(
+            "Liczba węzłów osób zwiniętych w ich jednoosobowe działalności. "
+            "Osoba prowadząca JDG ma w grafie tę samą nazwę co jej firma i ani "
+            "jednej krawędzi poza nią, więc jako osobny węzeł nic nie wnosi. "
+            "Fakt zostaje w danych i wraca w pozostałych odpowiedziach API."
+        ),
+    )
 
 
 class GraphOut(BaseModel):

@@ -59,6 +59,16 @@ _DIGITS_RE = re.compile(r"\D+")
 _MANUAL_TRANSLIT = str.maketrans({"ł": "l", "Ł": "L", "ø": "o", "æ": "ae", "ß": "ss"})
 
 
+#: Rodzaj ulicy jest w polskich rejestrach zapisywany niekonsekwentnie: „ul.",
+#: „ul", „aleja", albo wcale. Nie niesie informacji odróżniającej adresy, więc
+#: przy dopasowaniu go usuwamy — inaczej „ul. Chemików" i „Chemików" byłyby
+#: dwoma różnymi ulicami.
+_STREET_PREFIX_RE = re.compile(
+    r"^(ul\.|ul\b|al\.|al\b|aleja|aleje|pl\.|plac|os\.|osiedle|rondo|skwer)\s*",
+    re.IGNORECASE,
+)
+
+
 def _fold(text: str) -> str:
     """Usuwa diakrytykę, sprowadza do lowercase, zostawia [a-z0-9 ]."""
     folded = text.translate(_MANUAL_TRANSLIT)
@@ -87,6 +97,71 @@ def normalize_company_name(raw: str) -> str:
 def normalize_person_name(raw: str) -> str:
     """Imię i nazwisko bez diakrytyki, w stałej kolejności tokenów."""
     return _fold(raw)
+
+
+def address_search_key(raw: str) -> str:
+    """Adres w postaci, po której da się **szukać** — z zachowanymi granicami słów.
+
+    Adres pełni w tym systemie dwie różne role i przez długi czas dzielił dla
+    obu jedną wartość, co uniemożliwiało wyszukiwanie:
+
+    * **klucz naturalny** (`addresses.normalized`) służy do scalania i musi być
+      sklejony w jeden ciąg, żeby „ul. Chemików 7" i „Chemików 7" trafiły w ten
+      sam wiersz. Robi to `address_natural_key`.
+    * **pole wyszukiwania** (`entities.normalized_name`) musi mieć spacje, bo
+      indeks pełnotekstowy dzieli po słowach. Bez nich cały adres jest jednym
+      tokenem i zapytanie „chemikow plock" nie ma czego dopasować.
+
+    >>> address_search_key("Chemików 7, 09-411 Płock")
+    'chemikow 7 09 411 plock'
+    """
+    return _fold(raw)
+
+
+def address_natural_key(raw: str) -> str:
+    """Adres jako klucz scalania — bez spacji, bo różnice w zapisie mają zniknąć.
+
+    >>> address_natural_key("ul. Chemików 7, 09-411 Płock")
+    'ulchemikow709411plock'
+    >>> address_natural_key("Chemików 7, 09-411, Płock") == address_natural_key(
+    ...     "Chemików 7, 09-411 Płock"
+    ... )
+    True
+    """
+    return _fold(raw).replace(" ", "")
+
+
+def address_point_key(*, city: str, street: str, building: str) -> str:
+    """Klucz dopasowania adresu do punktu adresowego z rejestru geodezyjnego.
+
+    Osobna funkcja, a nie `address_natural_key` na sklejonym napisie, bo obie
+    strony dopasowania mają **kolumny**, nie zdania. PRG podaje miejscowość,
+    ulicę i numer w osobnych polach, my też — a napis, który by z nich powstał,
+    różniłby się interpunkcją po każdej ze stron i dopasowanie padłoby na czymś,
+    co nie jest różnicą w adresie.
+
+    Kolejność jest ustalona: miejscowość, ulica, numer. Numer bywa zapisany
+    z literą albo z ukośnikiem (`28a`, `14/2`) i to jest część adresu, więc
+    zostaje — znika tylko to, co nie niesie informacji.
+
+    >>> address_point_key(city="Płock", street="ul. Chemików", building="7")
+    'plock|chemikow|7'
+    >>> address_point_key(city="PŁOCK", street="Chemików", building="7")
+    'plock|chemikow|7'
+    >>> address_point_key(city="Gdańsk", street="Leczkowa", building="28a/7")
+    'gdansk|leczkowa|28a 7'
+    """
+    return "|".join(
+        (
+            _fold(city),
+            _fold(_STREET_PREFIX_RE.sub("", street.strip())),
+            # Bez sklejania: `14/2` i `1/42` po usunięciu spacji dają ten sam
+            # napis `142`, czyli dwa różne mieszkania trafiłyby w jeden punkt
+            # adresowy. Człony klucza rozdziela `|`, więc spacja w numerze
+            # niczego nie psuje.
+            _fold(building),
+        )
+    )
 
 
 def split_person_name(raw: str) -> tuple[str, str]:

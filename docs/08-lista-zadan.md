@@ -24,17 +24,39 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **„Kto jeszcze pod tym adresem"** — z paginacją i ostrzeżeniem przy
+      adresach zbiorczych. Przyjmuje id podmiotu albo id adresu.
+- [x] **Szukanie po adresie** — rozdzielone dwie role adresu: klucz scalania
+      zostaje sklejony, pole wyszukiwania dostaje granice słów. 2,4 mln wierszy
+      przepisanych partiami. „chemikow plock" → 6 ms zamiast zera wyników.
+- [x] **Wyszukiwarka — druga tura**: kolejność słów przez indeks pełnotekstowy
+      (0,148 ms zamiast 200 ms trigramem) i filtr stanu działalności.
+- [x] **Paginacja** — wyszukiwarka i powiązania, z `meta` w kontrakcie.
+      Ujawniła pluskwę: etap szerokiego prefiksu gubił wyniki na dalszych
+      stronach, bo duplikaty zjadały jego limit.
+- [x] **KRS jako wzbogacanie na żądanie** — `enrich-krs`, endpoint
+      `POST /entities/{id}/enrich/krs`, czas życia odpisu 30 dni, historia nazw
+      i kapitału w interfejsie. Historia była wcześniej liczona i wyrzucana.
+- [x] **Kontrole danych wpięte w bramki i w ETL** — `make data-check`,
+      `make check-db`, plus werdykt po każdym imporcie. Przy okazji naprawiony
+      `make test-integration`, który szedł przez Dockera i nie wykonał się nigdy.
+- [x] **Bramki, commity i push** — 10 commitów w PR #2, stos PR #2 → #3 → #4.
+- [x] **Reimport CEIDG z naprawą pochodzenia** — krawędzie bez źródła
+      6 392 682 → 733, adresy z numerem budynku 0 → 2 373 660, zero skasowanych
+      wierszy. Pozostałe 733 to dług z importu sprzed wprowadzenia pochodzenia,
+      którego raport źródłowy już nie istnieje; kontrola ma na to opisany próg.
+- [x] **Zbadane 22 encje z dwoma LEI-ami** — scalanie było poprawne, kontrola
+      za szeroka. GLEIF wystawia rekordy `DUPLICATE` i `LAPSED`, więc jedna
+      spółka legalnie nosi dwa LEI-e przy jednym KRS-ie.
+- [x] **Asercje jakości danych** — `check-data`, siedem kontroli, każda
+      wywiedziona z realnej awarii. Pierwsze uruchomienie wykryło złamanie N2
+      na 98,9% grafu.
 - [x] **Fixture KRS zastąpiony prawdziwym odpisem** — poprzedni opisywał
       schemat wymyślony, z niezamaskowanymi nazwiskami i `naglowekA` w złym
       miejscu. Testy przechodziły, opisując API, które nie istnieje.
 
 ## Do zrobienia — pilne
 
-- [ ] **Bramki jakości i commit.** Od importu CEIDG nazbierało się bardzo dużo
-      niezacommitowanego kodu. To największe bieżące ryzyko w projekcie.
-- [ ] **Reimport CEIDG** — poprawiony format adresu (`ul. Kąty 14, 34-443
-      Sromowce Wyżne` zamiast członów rozdzielonych przecinkami) oraz zapis
-      numeru budynku i lokalu do osobnych kolumn. Około 40 minut.
 
 ## Znalezione przy okazji
 
@@ -51,12 +73,27 @@ priorytetowi, nie chronologii.
       źródła wspólnego identyfikatora. Prawdziwa liczba duplikatów jest większa,
       bo obejmuje też pary o różnym zapisie nazwy.
 - [ ] „1 powiązań" — liczebnik nieodmieniony w liście wyników i na profilu.
+- [ ] **Adres tej samej siedziby jako dwie encje** — ORLEN ma
+      `Chemików 7, 09-411 Płock` z odpisu KRS i `Płock Chemików 7, 09-411, Płock`
+      z wcześniejszego importu. Normalizacja adresu różni się między źródłami
+      i trzeba ją ujednolicić, zanim dojdzie dopasowanie do punktów PRG.
+- [ ] **Historia nazwy z wygasłego LEI.** Rekord `LAPSED` w GLEIF nosi dawną
+      nazwę spółki (AVNET → TD SYNNEX AS POLAND). Mamy te dane i ich nie
+      wykorzystujemy, a to darmowa historia nazw dla podmiotów z GLEIF.
+- [ ] **Status rejestracji LEI w interfejsie** — przy dwóch LEI-ach nie widać,
+      który jest bieżący, a który zduplikowany albo wygasły.
 
 ## Do zrobienia — funkcje
 
-- [ ] **KRS jako wzbogacanie na żądanie** + mechanizm TTL. Mapper gotowy
-      i przetestowany: daje 25 lat datowanej historii — nazwy, siedziby, kapitał,
-      każda zmiana z numerem i datą wpisu. To jedyne źródło prawdziwej historii.
+- [ ] **Wyszukiwarka — reszta trzeciej tury.**
+      - **filtr województwa** — `addresses.voivodeship` istnieje, ale prowadzi
+        do niego krawędź `registered_at`, więc złączenie jest za drogie na
+        ścieżce gorącej. Do rozwiązania denormalizacją albo osobnym indeksem.
+      - **podpowiedzi w trakcie pisania** — etap prefiksowy kosztuje 0,3 ms,
+        więc stać nas na to bez dodatkowej infrastruktury.
+      - **„czy chodziło o…"** przy zerowym wyniku — trigram już liczy
+        podobieństwo, tylko go nie pokazujemy.
+
 - [ ] **Mapa zbiorcza podmiotów** z grupowaniem znaczników.
       - klastrowanie po stronie serwera: agregacja po siatce zależnej od poziomu
         przybliżenia, zwracamy liczności zamiast punktów — 2,4 mln znaczników
@@ -99,8 +136,8 @@ priorytetowi, nie chronologii.
 - [ ] **CEIDG `/firma/{id}`** — upadłości, zakazy, spółki cywilne, zarząd
       sukcesyjny. Pola są w API, nie ma ich w raportach zbiorczych.
 - [ ] Suwak `as_of` w interfejsie — API to obsługuje, UI nie wystawia
-- [ ] „Kto jeszcze pod tym adresem" i „inne firmy tej osoby" — mamy komplet
-      danych, tylko tego nie liczymy
+- [ ] „Inne firmy tej osoby" — dla właścicieli JDG i wspólników. Analogiczne
+      do sąsiadów spod adresu, tylko po krawędzi `sole_proprietor_of`.
 - [ ] Zwijanie węzła osoby w węzeł firmy dla JDG — dziś graf pokazuje
       „Jacek Gadomski → właściciel → Jacek Gadomski", co jest szumem
 
@@ -120,4 +157,5 @@ priorytetowi, nie chronologii.
 - [ ] `entity_changes` — tabela zdarzeń domenowych pod alerty. Dopisanie
       wstecz oznacza utratę historii.
 - [ ] Testy jednostkowe dla nowych źródeł (CEIDG, CIT, BZP, geokoder)
-- [ ] Ścieżka dockerowa nadal nieuruchomiona ani razu
+- [ ] Ścieżka dockerowa nadal nieuruchomiona ani razu. `make test-integration`
+      już jej nie używa; zostają `make up`, `make psql` i `make bench`.

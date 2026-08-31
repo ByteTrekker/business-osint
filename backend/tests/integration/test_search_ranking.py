@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from business_osint.db.models import Company, Entity
+from business_osint.db.models import Company, Entity, EntityIdentifier
 from business_osint.domain.enums import EntityType
 from business_osint.repositories.entities import EntityRepository
 
@@ -45,8 +45,8 @@ async def _company(
     return entity_id
 
 
-async def _names(session, query: str) -> list[str]:
-    hits = await EntityRepository(session).search(query, limit=10)
+async def _names(session, query: str, **kwargs) -> list[str]:
+    hits, _ = await EntityRepository(session).search(query, limit=10, **kwargs)
     return [h.display_name for h in hits]
 
 
@@ -118,3 +118,57 @@ async def test_query_matching_no_prefix_still_finds_entity_by_trigram(db_session
     await _company(db_session, f"{PREFIX} termika", degree=0)
 
     assert await _names(db_session, f"pkn {PREFIX} termika")
+
+
+async def test_word_order_does_not_matter(db_session) -> None:
+    """„termika orlen" ma trafić w ORLEN TERMIKA.
+
+    Żaden etap prefiksowy tego nie zrobi, bo zapytanie nie jest początkiem
+    nazwy. Wcześniej ratował to dopiero trigram — poprawnie, ale w setkach
+    milisekund zamiast w ułamku jednej.
+    """
+    await _company(db_session, f"{PREFIX} termika")
+    await _company(db_session, f"{PREFIX} energia")
+
+    assert await _names(db_session, f"termika {PREFIX}") == [f"{PREFIX} termika".upper()]
+
+
+async def test_a_word_outside_the_name_falls_through_to_fuzzy(db_session) -> None:
+    """Dopasowanie po słowach jest koniunkcyjne — brakujące słowo wyklucza trafienie.
+
+    Sprawdzamy to po **paśmie wyniku**, nie po jego obecności: podmiot i tak
+    wraca, bo przy pustym rezultacie uruchamia się trigram. Gdyby etap słowny
+    był alternatywą, „jan kowalski" zwracałby pół bazy — a tu wyszłoby to jako
+    wynik z pasma 0,55–0,69 zamiast trigramowego 0,30–0,39.
+    """
+    await _company(db_session, f"{PREFIX} termika")
+
+    hits, _ = await EntityRepository(db_session).search(f"{PREFIX} termika elektrownia", limit=5)
+
+    assert [h.display_name for h in hits] == [f"{PREFIX} termika".upper()]
+    assert hits[0].score < 0.40, "trafienie przyszło z etapu słownego, a nie z trigramu"
+
+
+async def test_status_filter_narrows_the_result(db_session) -> None:
+    """Filtr stanu zawęża, a nie tylko przestawia kolejność."""
+    await _company(db_session, f"{PREFIX} alfa", status="active")
+    await _company(db_session, f"{PREFIX} beta", status="suspended")
+
+    assert await _names(db_session, PREFIX, status="suspended") == [f"{PREFIX} beta".upper()]
+    assert await _names(db_session, PREFIX, status="inactive") == []
+
+
+async def test_status_filter_does_not_hide_a_hit_found_by_identifier(db_session) -> None:
+    """Kto podał NIP, chce tę encję — nawet jeżeli jest wykreślona.
+
+    Filtr stanu jest narzędziem przeglądania, nie cenzurą wyniku dokładnego.
+    """
+    entity_id = await _company(db_session, f"{PREFIX} zamknieta", status="inactive")
+    db_session.add(
+        EntityIdentifier(id=uuid.uuid4(), entity_id=entity_id, scheme="nip", value="5252445170")
+    )
+    await db_session.flush()
+
+    assert await _names(db_session, "5252445170", status="active") == [
+        f"{PREFIX} zamknieta".upper()
+    ]
