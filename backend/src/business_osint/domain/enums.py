@@ -35,6 +35,8 @@ class RelationshipType(StrEnum):
     SUCCESSOR_OF = "successor_of"  # przekształcenie / połączenie
     # wykonawca -> zamawiający (zamówienia publiczne)
     CONTRACTOR_OF = "contractor_of"
+    # osoba fizyczna -> jej jednoosobowa działalność (CEIDG)
+    SOLE_PROPRIETOR_OF = "sole_proprietor_of"
     # Krawędzie wyprowadzone (nie pochodzą wprost z rejestru):
     SHARES_ADDRESS_WITH = "shares_address_with"
     SHARES_PERSON_WITH = "shares_person_with"
