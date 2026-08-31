@@ -148,12 +148,18 @@ def address_point_key(*, city: str, street: str, building: str) -> str:
     'plock|chemikow|7'
     >>> address_point_key(city="PŁOCK", street="Chemików", building="7")
     'plock|chemikow|7'
+    >>> address_point_key(city="Gdańsk", street="Leczkowa", building="28a/7")
+    'gdansk|leczkowa|28a 7'
     """
     return "|".join(
         (
             _fold(city),
             _fold(_STREET_PREFIX_RE.sub("", street.strip())),
-            _fold(building).replace(" ", ""),
+            # Bez sklejania: `14/2` i `1/42` po usunięciu spacji dają ten sam
+            # napis `142`, czyli dwa różne mieszkania trafiłyby w jeden punkt
+            # adresowy. Człony klucza rozdziela `|`, więc spacja w numerze
+            # niczego nie psuje.
+            _fold(building),
         )
     )
 

@@ -25,7 +25,6 @@ import datetime as dt
 import json
 import uuid
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import text
@@ -34,6 +33,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from business_osint.db.models import IngestionRun
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import SourceKind
+from business_osint.domain.registry_values import (
+    current_value,
+    parse_registry_amount,
+    parse_registry_date,
+)
 from business_osint.etl.fetching.errors import FetchError
 from business_osint.etl.loaders import load_document, store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
@@ -150,35 +154,6 @@ _APPLY_COMPANY_FACTS = text("""
 """)
 
 
-# asyncpg wnioskuje typ parametru z `CAST(... AS date)` i **odrzuca napis** —
-# potrzebuje `datetime.date` i `Decimal`. Lint ani mypy tego nie widzą, bo to
-# surowy SQL; wychodzi dopiero na żywym połączeniu.
-
-
-def _as_date(value: Any) -> dt.date | None:
-    if isinstance(value, dt.date):
-        return value
-    try:
-        return dt.date.fromisoformat(str(value)[:10])
-    except (TypeError, ValueError):
-        return None
-
-
-def _latest_capital(history: list[dict[str, Any]]) -> Decimal | None:
-    """Ostatni wpis kapitału, czyli obowiązujący. Historia jest chronologiczna."""
-    current = [entry for entry in history if entry.get("to") is None]
-    chosen = current[-1] if current else (history[-1] if history else None)
-    if chosen is None:
-        return None
-    value = chosen.get("value")
-    if value is None:
-        return None
-    try:
-        return Decimal(str(value).replace(",", ".").replace(" ", ""))
-    except InvalidOperation:
-        return None
-
-
 async def _is_fresh(session: AsyncSession, krs: str, ttl: dt.timedelta) -> dt.datetime | None:
     """Zwraca datę ostatniego pobrania, jeżeli mieści się w czasie życia."""
     last = (await session.execute(_LAST_FETCH, {"external_id": krs})).scalar()
@@ -281,8 +256,8 @@ async def apply_company_facts(session: AsyncSession, krs: str, parsed: Any) -> i
             "krs": krs,
             "attributes": json.dumps(attributes, ensure_ascii=False),
             "legal_form": company.attributes.get("legal_form"),
-            "registered_on": _as_date(company.attributes.get("registered_on")),
-            "share_capital": _latest_capital(capital_history),
+            "registered_on": parse_registry_date(company.attributes.get("registered_on")),
+            "share_capital": parse_registry_amount(current_value(capital_history)),
         },
     )
     return len(company.attributes.get("name_history") or []) + len(capital_history)

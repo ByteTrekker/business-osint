@@ -6,6 +6,7 @@ import pytest
 
 from business_osint.domain.normalization import (
     address_natural_key,
+    address_point_key,
     address_search_key,
     company_name_blocking_key,
     is_valid_krs,
@@ -270,3 +271,73 @@ def test_differently_punctuated_addresses_merge_to_one_key() -> None:
 def test_address_without_a_street_still_yields_searchable_words() -> None:
     """Adresy wiejskie to sam numer i miejscowość — muszą być wyszukiwalne tak samo."""
     assert address_search_key("18, 46-310 Jamy") == "18 46 310 jamy"
+
+
+# --- Klucz dopasowania do punktów adresowych PRG ----------------------------
+
+
+def test_address_point_key_ignores_case_and_diacritics() -> None:
+    """Rejestry zapisują te same nazwy różnie — to nie jest różnica w adresie."""
+    assert address_point_key(city="PŁOCK", street="Chemików", building="7") == (
+        address_point_key(city="Płock", street="chemikow", building="7")
+    )
+
+
+def test_street_type_prefix_is_dropped() -> None:
+    """„ul. Chemików" i „Chemików" to ta sama ulica.
+
+    Polskie rejestry zapisują rodzaj ulicy niekonsekwentnie: „ul.", „ul",
+    „aleja" albo wcale. Zostawienie go rozbiłoby dopasowanie na czymś, co nie
+    niesie informacji odróżniającej.
+    """
+    key = address_point_key(city="Płock", street="Chemików", building="7")
+
+    for prefix in ("ul. ", "ul ", "UL. ", "al. ", "Aleja ", "pl. ", "os. "):
+        assert address_point_key(city="Płock", street=f"{prefix}Chemików", building="7") == key
+
+
+def test_building_number_keeps_its_letter_and_slash() -> None:
+    """`28a` i `14/2` to część adresu, nie ozdobnik — muszą przetrwać normalizację.
+
+    Sprowadzenie ich do samej cyfry scaliłoby ze sobą różne lokale pod tym
+    samym numerem budynku.
+    """
+    assert address_point_key(city="Gdańsk", street="Leczkowa", building="28a").endswith("28a")
+    assert address_point_key(city="Gdańsk", street="Leczkowa", building="28b") != (
+        address_point_key(city="Gdańsk", street="Leczkowa", building="28a")
+    )
+
+
+def test_the_three_parts_stay_separated() -> None:
+    """Człony są rozdzielone, żeby „Nowa 12" nie zlało się z „Nowa1 2".
+
+    Sklejenie wszystkiego w jeden ciąg — tak jak w kluczu naturalnym adresu —
+    tworzyłoby fałszywe trafienia między różnymi adresami.
+    """
+    assert address_point_key(city="X", street="Nowa", building="12") != (
+        address_point_key(city="X", street="Nowa1", building="2")
+    )
+
+
+def test_different_localities_never_share_a_key() -> None:
+    """Ta sama ulica i numer w dwóch miastach to dwa różne adresy."""
+    assert address_point_key(city="Płock", street="Chemików", building="7") != (
+        address_point_key(city="Gdańsk", street="Chemików", building="7")
+    )
+
+
+def test_empty_parts_do_not_break_the_key() -> None:
+    """Adres wiejski bywa bez ulicy — klucz ma powstać, a nie wybuchnąć."""
+    assert address_point_key(city="Jamy", street="", building="18") == "jamy||18"
+
+
+def test_flat_number_is_not_glued_to_the_building_number() -> None:
+    """`14/2` i `1/42` to różne adresy i muszą mieć różne klucze.
+
+    Usunięcie separatora dawało z obu napis `142`, czyli dwa różne mieszkania
+    trafiałyby w ten sam punkt adresowy. Wykryte przez test mutacyjny, nie przez
+    pokrycie: linia była wykonywana, tylko żaden test nie sprawdzał jej skutku.
+    """
+    assert address_point_key(city="X", street="Nowa", building="14/2") != (
+        address_point_key(city="X", street="Nowa", building="1/42")
+    )
