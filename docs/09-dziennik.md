@@ -12,6 +12,46 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Paginacja i pluskwa, którą wykryła
+
+**Skąd.** API zwracało `limit` i nic poza tym. Lista powiązań ucięta na dwustu
+wierszach wyglądała **identycznie** jak lista, która na dwustu się kończy —
+klient nie miał żadnego sygnału, że czegoś nie widzi. To jest naruszenie
+niezmiennika N3, tylko po stronie kontraktu, a nie traversalu.
+
+**Decyzja: przesunięcie, nie kursor.** Kursor po `(score, id)` byłby
+teoretycznie ładniejszy, ale wyszukiwarka jest etapowa i żeby oddać stronę n,
+i tak musi pobrać wszystko, co ją poprzedza. Przesunięcie jest uczciwsze wobec
+tego, jak to naprawdę działa, i prostsze. Ograniczone do 1000 — kto potrzebuje
+więcej wyników, potrzebuje eksportu, a nie przewijania.
+
+**`total` bywa `null` i to jest świadome.** Dla powiązań liczymy dokładnie,
+bo to jedno tanie zapytanie. Dla wyszukiwania pełny przelicznik oznaczałby
+przejście przez wszystkie dopasowania — przy prefiksie „a" to 830 tys. wierszy.
+Mówimy więc tylko, czy jest coś dalej. Zmyślona liczba byłaby gorsza od
+przyznania się do jej braku, a interfejs pokazuje zakres zamiast „strona 7 z 12".
+
+**Pluskwa, którą stronicowanie ujawniło.** Przy `offset=20` wracał **jeden**
+wynik zamiast trzech. Przyczyna: każdy etap pytał o `needed - len(rows)`
+wierszy, a etap szerokiego prefiksu zwraca **nadzbiór** dwóch poprzednich —
+jego limit zjadały duplikaty odrzucane dopiero po pobraniu. Bez stronicowania
+ten błąd był niewidoczny, bo pierwsza strona zawsze wychodziła kompletna.
+Każdy etap pyta teraz o pełną liczbę i polega na odsiewaniu duplikatów.
+
+Do zapytań doszedł też `e.id` jako ostatni element porządku. Bez niego wiersze
+o równej trafności wracają w kolejności zależnej od planu, a wtedy przy
+stronicowaniu ten sam podmiot potrafi pojawić się dwa razy albo zniknąć.
+
+**Test, który to złapałby wcześniej.** Nie sprawdzamy liczników, tylko czy
+**sklejone strony dają dokładnie ten sam zbiór** co jedno duże zapytanie. Test
+na samych licznikach przeszedłby także przy dublowaniu i gubieniu wyników.
+
+**Znalezione przy okazji.** ORLEN ma dwie encje adresu tej samej siedziby:
+`Chemików 7, 09-411 Płock` z odpisu KRS i `Płock Chemików 7, 09-411, Płock`
+z wcześniejszego importu. Normalizacja adresu różni się między źródłami.
+
+---
+
 ## 2026-08-31 — KRS na żądanie: historia była liczona i wyrzucana
 
 **Objaw, którego nie było widać.** Mapper KRS produkował datowaną historię

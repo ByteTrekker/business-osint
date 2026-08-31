@@ -437,3 +437,34 @@ h2 {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* Nawigacja stron — bez numerów, bo wyszukiwarka nie zna liczby wszystkich
+   dopasowań i zmyślona liczba stron byłaby gorsza od jej braku. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.pager__link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.pager__link:hover {
+  text-decoration: underline;
+}
+.pager__link--off {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
+}
+.pager__range {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

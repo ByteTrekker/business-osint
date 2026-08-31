@@ -46,7 +46,7 @@ async def _company(
 
 
 async def _names(session, query: str) -> list[str]:
-    hits = await EntityRepository(session).search(query, limit=10)
+    hits, _ = await EntityRepository(session).search(query, limit=10)
     return [h.display_name for h in hits]
 
 

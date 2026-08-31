@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
+import Pager from "@/components/Pager";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; offset?: string }>;
 }) {
-  const { q } = await searchParams;
-  const results = q && q.length >= 2 ? await api.search(q).catch(() => null) : null;
+  const { q, offset: rawOffset } = await searchParams;
+  const offset = Math.max(0, Number.parseInt(rawOffset ?? "0", 10) || 0);
+  const results = q && q.length >= 2 ? await api.search(q, { offset }).catch(() => null) : null;
 
   return (
     <>
@@ -47,6 +49,13 @@ export default async function HomePage({
             </li>
           ))}
         </ul>
+      )}
+
+      {results && (
+        <Pager
+          meta={results.meta}
+          href={(next) => `/?q=${encodeURIComponent(q ?? "")}&offset=${next}`}
+        />
       )}
     </>
   );
