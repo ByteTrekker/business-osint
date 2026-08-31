@@ -69,15 +69,23 @@ class EntityResolver:
                 stats.entities_matched += 1
                 return existing
 
-        blocking_key = self._blocking_key(parsed)
-        # Firmy bez identyfikatora i adresy scalamy po kluczu blokującym —
-        # dla osób NIE, bo zbieżność imienia i nazwiska nie jest dowodem.
-        if parsed.entity_type in (EntityType.COMPANY, EntityType.ADDRESS) and blocking_key:
-            existing = await self._by_blocking_key(parsed.entity_type, blocking_key)
+        if parsed.entity_type is EntityType.ADDRESS:
+            existing = await self._by_normalized_address(parsed.normalized_name)
             if existing:
                 stats.entities_matched += 1
                 return existing
 
+        # ŻADNEGO automatycznego scalania po nazwie — ani dla osób, ani dla firm.
+        #
+        # Klucz blokujący to dwanaście pierwszych znaków znormalizowanej nazwy.
+        # W polskich danych dzieli go 49 704 firm zaczynających się od
+        # „PRZEDSIĘBIORSTWO", 52 041 od „INDYWIDUALNA" i 40 640 od „FIRMA
+        # HANDLOWA". Scalanie po nim wrzuciło 734 cudze adresy do jednej JDG.
+        #
+        # Klucz zostaje zapisany, bo służy jako generator kandydatów do kolejki
+        # przeglądu — ale kandydat to nie dowód. Duplikat widać i da się scalić;
+        # fałszywe scalenie tworzy powiązania, które nie istnieją (niezmiennik N4).
+        blocking_key = self._blocking_key(parsed)
         entity_id = await self._create(parsed, blocking_key)
         stats.entities_created += 1
         return entity_id
@@ -102,15 +110,19 @@ class EntityResolver:
         )
         return result.scalars().first()
 
-    async def _by_blocking_key(self, entity_type: EntityType, key: str) -> uuid.UUID | None:
+    async def _by_normalized_address(self, normalized: str) -> uuid.UUID | None:
+        """Adres ma naturalny klucz w `addresses.normalized` — po nim dopasowujemy.
+
+        Klucz blokujący na `entities` tu nie wystarcza: źródła masowe (CEIDG)
+        wstawiają adresy zapytaniem zbiorczym i nie wypełniają `blocking_key`,
+        więc resolver ich nie widział i próbował wstawić duplikat, łamiąc
+        `uq_addresses_normalized`.
+        """
         return (
             (
                 await self._session.execute(
-                    select(Entity.id).where(
-                        Entity.entity_type == entity_type,
-                        Entity.blocking_key == key,
-                        Entity.merged_into_id.is_(None),
-                    )
+                    text("SELECT entity_id FROM addresses WHERE normalized = :normalized LIMIT 1"),
+                    {"normalized": normalized},
                 )
             )
             .scalars()
