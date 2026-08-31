@@ -24,6 +24,7 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **Bramki, commity i push** — 10 commitów w PR #2, stos PR #2 → #3 → #4.
 - [x] **Reimport CEIDG z naprawą pochodzenia** — krawędzie bez źródła
       6 392 682 → 733, adresy z numerem budynku 0 → 2 373 660, zero skasowanych
       wierszy. Pozostałe 733 to dług z importu sprzed wprowadzenia pochodzenia,
@@ -40,8 +41,6 @@ priorytetowi, nie chronologii.
 
 ## Do zrobienia — pilne
 
-- [ ] **Bramki jakości i commit.** Od importu CEIDG nazbierało się bardzo dużo
-      niezacommitowanego kodu. To największe bieżące ryzyko w projekcie.
 - [ ] **Wpiąć `check-data` w bramki** — teraz, gdy wszystkie kontrole
       przechodzą. Wymaga bazy, więc obok `make test-integration`, nie w `make check`.
 
