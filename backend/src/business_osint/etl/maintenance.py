@@ -154,3 +154,86 @@ async def resplit_address_names(*, progress: Any = None) -> int:
         updated += len(rows)
         if progress is not None:
             progress(updated)
+
+
+# Stan rejestracji LEI leży w pobranych dokumentach GLEIF i nie był z nich nigdy
+# wyciągnięty. Wszystkie 45 530 numerów LEI w bazie mają pokrycie w dokumentach,
+# więc to jest przepisanie danych, które już mamy — bez ani jednego zapytania
+# do sieci.
+_LEI_DOCUMENTS = text("""
+    SELECT d.payload
+    FROM raw_documents d
+    JOIN sources s ON s.id = d.source_id
+    WHERE s.kind = 'gleif' AND d.payload ? 'data'
+    ORDER BY d.id
+    LIMIT :batch_size OFFSET :offset
+""")
+
+_APPLY_LEI_RECORDS = text("""
+    UPDATE companies c
+    SET attributes = c.attributes || jsonb_build_object('lei_records', wpisy.rekordy)
+    FROM (
+        SELECT i.entity_id, jsonb_agg(nowe.rekord ORDER BY nowe.rekord->>'lei') AS rekordy
+        FROM (SELECT unnest(CAST(:leis AS text[])) AS lei,
+                     unnest(CAST(:records AS jsonb[])) AS rekord) AS nowe
+        JOIN entity_identifiers i ON i.scheme = 'lei' AND i.value = nowe.lei
+        GROUP BY i.entity_id
+    ) AS wpisy
+    WHERE c.entity_id = wpisy.entity_id
+""")
+
+
+async def backfill_lei_records(*, progress: Any = None) -> int:
+    """Przepisuje stan rejestracji LEI z pobranych dokumentów do atrybutów firm.
+
+    Rekordy zbieramy **w całości przed zapisem**, a nie partia po partii. Zapis
+    partiami nadpisywałby `lei_records` przy każdym przebiegu, więc spółka,
+    której numery LEI trafiły do różnych dokumentów, zachowałaby tylko te
+    z ostatniej partii. Przy 57 959 rekordach zebranie wszystkiego w pamięci
+    kosztuje kilka megabajtów i usuwa całą klasę tego błędu.
+
+    Deduplikujemy po numerze LEI: strony wyników GLEIF zachodzą na siebie, więc
+    ten sam rekord bywa w kilku dokumentach.
+
+    Zwraca liczbę **różnych** numerów LEI, które udało się opisać.
+    """
+    import json as _json
+
+    from business_osint.etl.sources.gleif_mapper import parse_lei_registrations
+
+    unique: dict[str, dict[str, str | None]] = {}
+    offset = 0
+    batch = 200
+    factory = get_etl_sessionmaker()
+
+    while True:
+        async with factory() as session:
+            await session.execute(text("SET statement_timeout = '15min'"))
+            payloads = list(
+                (
+                    await session.execute(_LEI_DOCUMENTS, {"batch_size": batch, "offset": offset})
+                ).scalars()
+            )
+        if not payloads:
+            break
+        for payload in payloads:
+            for record in parse_lei_registrations(payload):
+                unique[str(record["lei"])] = record
+        offset += batch
+        if progress is not None:
+            progress(len(unique))
+
+    if not unique:
+        return 0
+
+    records = list(unique.values())
+    async with factory() as session, session.begin():
+        await session.execute(text("SET LOCAL statement_timeout = '15min'"))
+        await session.execute(
+            _APPLY_LEI_RECORDS,
+            {
+                "leis": [str(r["lei"]) for r in records],
+                "records": [_json.dumps(r, ensure_ascii=False) for r in records],
+            },
+        )
+    return len(records)

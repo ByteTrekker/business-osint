@@ -26,6 +26,12 @@ priorytetowi, nie chronologii.
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
 - [x] **„Kto jeszcze pod tym adresem"** — z paginacją i ostrzeżeniem przy
       adresach zbiorczych. Przyjmuje id podmiotu albo id adresu.
+- [x] **Stan rejestracji LEI** — wyciągnięty z już pobranych dokumentów, bez
+      sieci. 15 424 spółek ma LEI oznaczony `LAPSED`; ta informacja leżała
+      nieużywana. Historia nazwy z wygasłego rekordu dotyczy **14 spółek**,
+      nie wszystkich z GLEIF — wcześniejsze oszacowanie było zawyżone.
+- [x] **Odmiana liczebnika** — „1 powiązanie”, nie „1 powiązań”.
+- [x] **„Nie znaleziono nazwy…”** przy wyniku z dopasowania rozmytego.
 - [x] **Szukanie po adresie** — rozdzielone dwie role adresu: klucz scalania
       zostaje sklejony, pole wyszukiwania dostaje granice słów. 2,4 mln wierszy
       przepisanych partiami. „chemikow plock" → 6 ms zamiast zera wyników.
@@ -72,19 +78,10 @@ priorytetowi, nie chronologii.
       niczego nie dowodzi (N4), więc scalenie i tak wymaga odpisu KRS jako
       źródła wspólnego identyfikatora. Prawdziwa liczba duplikatów jest większa,
       bo obejmuje też pary o różnym zapisie nazwy.
-- [ ] „1 powiązań" — liczebnik nieodmieniony w liście wyników i na profilu.
 - [ ] **Adres tej samej siedziby jako dwie encje** — ORLEN ma
       `Chemików 7, 09-411 Płock` z odpisu KRS i `Płock Chemików 7, 09-411, Płock`
       z wcześniejszego importu. Normalizacja adresu różni się między źródłami
       i trzeba ją ujednolicić, zanim dojdzie dopasowanie do punktów PRG.
-- [ ] **Historia nazwy z wygasłego LEI.** Rekord `LAPSED` w GLEIF nosi dawną
-      nazwę spółki (AVNET → TD SYNNEX AS POLAND). Mamy te dane i ich nie
-      wykorzystujemy, a to darmowa historia nazw dla podmiotów z GLEIF.
-- [ ] **Status rejestracji LEI w interfejsie** — przy dwóch LEI-ach nie widać,
-      który jest bieżący, a który zduplikowany albo wygasły.
-
-## Do zrobienia — funkcje
-
 - [ ] **Wyszukiwarka — reszta trzeciej tury.**
       - **filtr województwa** — `addresses.voivodeship` istnieje, ale prowadzi
         do niego krawędź `registered_at`, więc złączenie jest za drogie na

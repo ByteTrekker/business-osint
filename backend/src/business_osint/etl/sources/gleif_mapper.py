@@ -70,6 +70,35 @@ def parse_lei_page(payload: dict[str, Any]) -> ParsedDocument:
     return result
 
 
+def parse_lei_registrations(payload: dict[str, Any]) -> list[dict[str, str | None]]:
+    """Numer LEI razem ze **stanem rejestracji** i nazwą, pod którą go wydano.
+
+    GLEIF nie gwarantuje jednego LEI na podmiot: wystawia rekordy oznaczone
+    `DUPLICATE`, a rekord `LAPSED` zostaje pod **dawną nazwą** spółki po zmianie
+    firmy. W bazie mamy 21 832 takich rekordów na 57 959 — czyli ponad jedna
+    trzecia numerów LEI opisuje stan, który już nie obowiązuje.
+
+    Bez tego pola dwa LEI-e przy jednej spółce wyglądają jak błąd scalania,
+    a są normalnym stanem rejestru. Przy okazji rekord wygasły niesie historię
+    nazwy dla podmiotów, których nie mamy w KRS.
+    """
+    records: list[dict[str, str | None]] = []
+    for record in payload.get("data") or []:
+        attributes = record.get("attributes") or {}
+        lei = attributes.get("lei") or record.get("id")
+        if not lei:
+            continue
+        entity = attributes.get("entity") or {}
+        records.append(
+            {
+                "lei": str(lei),
+                "status": (attributes.get("registration") or {}).get("status"),
+                "name": (entity.get("legalName") or {}).get("name"),
+            }
+        )
+    return records
+
+
 def _parse_lei_record(record: dict[str, Any]) -> ParsedEntity | None:
     attributes = record.get("attributes") or {}
     lei = attributes.get("lei") or record.get("id")

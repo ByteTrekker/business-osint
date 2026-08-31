@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { counted } from "@/lib/plural";
 import { api } from "@/lib/api";
 import Pager from "@/components/Pager";
 
@@ -55,6 +56,16 @@ export default async function HomePage({
 
       {results && results.hits.length === 0 && <p>Brak wyników dla „{q}”.</p>}
 
+      {/* Trafienie z niskim wynikiem znaczy, że nazwa nie pasuje dosłownie
+          i zadziałało dopasowanie rozmyte. Bez tej informacji użytkownik
+          czyta przybliżenie jak dokładną odpowiedź. Próg 0,40 to granica
+          pasma trigramowego — patrz `_BY_TRIGRAM` w repozytorium. */}
+      {results && results.hits.length > 0 && results.hits[0].score < 0.4 && (
+        <p className="hint">
+          Nie znaleziono nazwy „{q}”. Poniżej podmioty o&nbsp;najbardziej zbliżonych nazwach.
+        </p>
+      )}
+
       {results && results.hits.length > 0 && (
         <ul className="hits">
           {results.hits.map((hit) => (
@@ -63,7 +74,9 @@ export default async function HomePage({
                 <span className={`badge badge--${hit.type}`}>{hit.type}</span>
                 <strong>{hit.name}</strong>
                 {hit.subtitle && <span className="hits__sub">{hit.subtitle}</span>}
-                <span className="hits__degree">{hit.degree} powiązań</span>
+                <span className="hits__degree">
+                  {counted(hit.degree, "powiązanie", "powiązania", "powiązań")}
+                </span>
               </Link>
             </li>
           ))}
