@@ -28,12 +28,14 @@ make mutation           # testy mutacyjne warstwy domenowej
 make audit              # pip-audit + npm audit
 make commits            # konwencja Conventional Commits
 make check              # wszystko, co da się sprawdzić bez bazy
+make check-db           # migracje + testy integracyjne + niezmienniki na danych
+make data-check         # same niezmienniki na danych (kod wyjścia 1 przy naruszeniu)
 make migration-check    # alembic upgrade + alembic check (wymaga Postgresa)
 make psql               # konsola SQL
 ```
 
-**Przed pushem uruchom `make check`, a przy zmianach w modelach dodatkowo
-`make migration-check` i `make test-integration`.** Pełny opis bramek:
+**Przed pushem uruchom `make check`, a przy zmianach w modelach albo w ETL
+dodatkowo `make check-db`.** Pełny opis bramek:
 [docs/06-jakosc-kodu.md](docs/06-jakosc-kodu.md).
 
 Pułapki, które już raz przeszły przez lokalne testy i wywróciły CI albo runtime:
@@ -46,6 +48,10 @@ Pułapki, które już raz przeszły przez lokalne testy i wywróciły CI albo ru
   tego nie widzą, bo to surowy SQL; wyłapuje dopiero test integracyjny.
 * Migracje pisane ręcznie rozjeżdżają się z modelami. `alembic check` jest
   bramką w CI — nowy indeks w migracji musi trafić też do `__table_args__`.
+* Drugie `asyncio.run()` w jednej komendzie dostaje połączenia przypięte do
+  zamkniętej pętli. Jeżeli po imporcie ma się wykonać cokolwiek jeszcze
+  (np. kontrole danych), musi to być **ta sama** pętla — patrz
+  `_with_data_check` w `cli.py`.
 * PostgreSQL normalizuje `'epoch'::date` do `'1970-01-01'::date` w wyrażeniach
   indeksów — model musi używać tej samej postaci.
 

@@ -37,8 +37,12 @@ seed: ## Ładuje dane demonstracyjne
 test: ## Testy jednostkowe (bez bazy)
 	cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/unit -q
 
+# Uruchamiamy tak samo jak CI: natywnie, przeciwko lokalnemu Postgresowi.
+# Poprzednia wersja szła przez `docker compose exec` i nie wykonała się ani
+# razu — cel, który nigdy nie wystartował, jest gorszy niż jego brak, bo
+# wygląda na pokrycie.
 test-integration: ## Testy integracyjne (wymagają Postgresa)
-	$(COMPOSE) exec api pytest tests -m integration -q
+	cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/integration -q -m integration
 
 lint: ## Ruff + ESLint + Prettier
 	cd backend && .venv/bin/ruff check src tests && .venv/bin/ruff format --check src tests
@@ -69,7 +73,16 @@ migration-check: ## Czy modele SQLAlchemy zgadzają się z migracjami
 commits: ## Konwencja commitów w bieżącej gałęzi
 	./scripts/check-commits.sh
 
+# Asercje na **danych**, nie na kodzie. Świadomie nie ma ich w `check` ani w CI:
+# baza CI jest pusta po migracjach, więc kontrole przeszłyby tam zawsze i nie
+# znaczyłyby nic. Sensu nabierają dopiero na prawdziwym zbiorze, dlatego
+# uruchamia je operator po imporcie — i każda komenda importu na koniec sama.
+data-check: ## Niezmienniki na danych w lokalnej bazie
+	cd backend && PYTHONPATH=src .venv/bin/python -m business_osint.cli check-data
+
 check: lint typecheck coverage mutation commits ## Bramki CI możliwe do uruchomienia bez bazy
+
+check-db: migration-check test-integration data-check ## Bramki wymagające Postgresa
 
 psql: ## Konsola SQL
 	$(COMPOSE) exec db psql -U osint -d osint
@@ -79,4 +92,4 @@ bench: ## Generuje syntetyczny graf i mierzy czas zapytań
 	$(COMPOSE) exec db psql -U osint -d osint -f /dev/stdin < ops/bench.sql
 
 .PHONY: help dev-api dev-web db-local up down logs migrate revision seed test test-integration lint format \
-        typecheck coverage mutation audit migration-check commits check psql bench
+        typecheck coverage mutation audit migration-check commits check check-db data-check psql bench
