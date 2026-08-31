@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from business_osint.api.deps import SessionDep
 from business_osint.repositories.entities import EntityRepository
 from business_osint.schemas.entity import (
+    CoLocatedOut,
+    CoLocatedPageOut,
     EntityProfileOut,
     FinancialReportOut,
     IdentifierOut,
@@ -121,3 +123,51 @@ async def enrich_krs(entity_id: uuid.UUID, force: bool = False) -> dict[str, Any
     from business_osint.etl.krs_enrichment import enrich_entity
 
     return (await enrich_entity(entity_id, force=force)).as_dict()
+
+
+@router.get(
+    "/{entity_id}/co-located",
+    response_model=CoLocatedPageOut,
+    summary="Kto jeszcze jest zarejestrowany pod tym samym adresem",
+    description=(
+        "Wspólny adres to najczęstszy widoczny ślad powiązania między spółkami, "
+        "których nie łączy ani wspólnik, ani nazwa. Przyjmuje id podmiotu albo id "
+        "adresu — z profilu firmy nie trzeba najpierw klikać w jej siedzibę.\n\n"
+        "Duża liczba sąsiadów sama w sobie niczego nie dowodzi: pod jednym adresem "
+        "w Warszawie siedzi 456 podmiotów, bo to biuro wirtualne, a pod adresem "
+        "w Sromowcach Wyżnych 434, bo to wieś flisaków."
+    ),
+)
+async def get_co_located(
+    session: SessionDep,
+    entity_id: uuid.UUID,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CoLocatedPageOut:
+    repo = EntityRepository(session)
+    total = await repo.count_co_located(entity_id)
+    rows = await repo.co_located(entity_id, limit=limit, offset=offset)
+    items = [
+        CoLocatedOut(
+            id=row["id"],
+            type=row["entity_type"],
+            name=row["display_name"],
+            nip=row["nip"],
+            krs=row["krs"],
+            status=row["status"],
+            valid_from=row["valid_from"],
+            valid_to=row["valid_to"],
+            degree=row["degree"],
+        )
+        for row in rows
+    ]
+    return CoLocatedPageOut(
+        items=items,
+        meta=PageMeta(
+            limit=limit,
+            offset=offset,
+            returned=len(items),
+            has_more=offset + len(items) < total,
+            total=total,
+        ),
+    )

@@ -304,6 +304,19 @@ class EntityRepository:
         page = rows[offset : offset + limit]
         return await self._to_hits(page), has_more
 
+    async def co_located(
+        self, entity_id: uuid.UUID, *, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Inne podmioty pod tym samym adresem. Przyjmuje id podmiotu albo id adresu."""
+        rows = await self._session.execute(
+            _CO_LOCATED, {"id": entity_id, "limit": limit, "offset": offset}
+        )
+        return [dict(row) for row in rows.mappings()]
+
+    async def count_co_located(self, entity_id: uuid.UUID) -> int:
+        """Ilu sąsiadów ma podmiot pod swoim adresem."""
+        return int((await self._session.execute(_CO_LOCATED_COUNT, {"id": entity_id})).scalar_one())
+
     @staticmethod
     def _identifier_candidate(query: str) -> str | None:
         """Zwraca numer, jeżeli zapytanie wygląda na identyfikator rejestrowy."""
@@ -548,3 +561,57 @@ class EntityRepository:
             .all()
         )
         return [dict(row) for row in rows]
+
+
+# „Kto jeszcze siedzi pod tym adresem" jest w tym produkcie pytaniem pierwszej
+# kategorii, nie ciekawostką: wspólny adres to najczęstszy widoczny ślad
+# powiązania między spółkami, których nie łączy ani wspólnik, ani nazwa.
+#
+# Zapytanie przyjmuje **id podmiotu albo id adresu**. Użytkownik ogląda profil
+# firmy i chce sąsiadów jej siedziby; wymaganie, żeby najpierw kliknął w adres,
+# byłoby przerzuceniem na niego pracy, którą baza umie wykonać jednym złączeniem.
+_CO_LOCATED = text("""
+    WITH adres AS (
+        SELECT CASE
+                 WHEN EXISTS (SELECT 1 FROM addresses a WHERE a.entity_id = :id) THEN :id
+                 ELSE (SELECT r.target_entity_id FROM relationships r
+                       WHERE r.source_entity_id = :id
+                         AND r.relationship_type = 'registered_at'
+                         AND r.superseded_at IS NULL
+                       ORDER BY (r.valid_to IS NULL) DESC, r.valid_from DESC NULLS LAST
+                       LIMIT 1)
+               END AS id
+    )
+    SELECT e.id, e.entity_type, e.display_name, e.degree,
+           c.nip, c.krs, c.status, r.valid_from, r.valid_to
+    FROM adres
+    JOIN relationships r ON r.target_entity_id = adres.id
+                        AND r.relationship_type = 'registered_at'
+                        AND r.superseded_at IS NULL
+    JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
+    LEFT JOIN companies c ON c.entity_id = e.id
+    WHERE e.id <> :id
+    ORDER BY (r.valid_to IS NULL) DESC, e.degree DESC, e.display_name
+    LIMIT :limit OFFSET :offset
+""")
+
+_CO_LOCATED_COUNT = text("""
+    WITH adres AS (
+        SELECT CASE
+                 WHEN EXISTS (SELECT 1 FROM addresses a WHERE a.entity_id = :id) THEN :id
+                 ELSE (SELECT r.target_entity_id FROM relationships r
+                       WHERE r.source_entity_id = :id
+                         AND r.relationship_type = 'registered_at'
+                         AND r.superseded_at IS NULL
+                       ORDER BY (r.valid_to IS NULL) DESC, r.valid_from DESC NULLS LAST
+                       LIMIT 1)
+               END AS id
+    )
+    SELECT count(*)
+    FROM adres
+    JOIN relationships r ON r.target_entity_id = adres.id
+                        AND r.relationship_type = 'registered_at'
+                        AND r.superseded_at IS NULL
+    JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
+    WHERE e.id <> :id
+""")
