@@ -53,6 +53,28 @@ class RelationshipOut(BaseModel):
     provenance: list[ProvenanceOut] = Field(default_factory=list)
 
 
+class FinancialReportOut(BaseModel):
+    """Dane finansowe za okres sprawozdawczy."""
+
+    period_from: dt.date
+    period_to: dt.date
+    revenue: float | None = None
+    costs: float | None = None
+    income: float | None = None
+    loss: float | None = None
+    tax_base: float | None = None
+    tax_due: float | None = None
+    currency: str = "PLN"
+
+
+class LocationOut(BaseModel):
+    """Współrzędne adresu wraz z jego postacią tekstową."""
+
+    latitude: float
+    longitude: float
+    label: str
+
+
 class EntityProfileOut(BaseModel):
     id: uuid.UUID
     type: str
@@ -62,4 +84,5 @@ class EntityProfileOut(BaseModel):
     company: dict[str, Any] | None = None
     person: dict[str, Any] | None = None
     address: dict[str, Any] | None = None
+    financials: list[FinancialReportOut] = Field(default_factory=list)
     updated_at: dt.datetime | None = None

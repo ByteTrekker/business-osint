@@ -7,14 +7,21 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from business_osint.api.deps import SessionDep
 from business_osint.repositories.entities import EntityRepository
-from business_osint.schemas.entity import EntityProfileOut, IdentifierOut, RelationshipOut
+from business_osint.schemas.entity import (
+    EntityProfileOut,
+    FinancialReportOut,
+    IdentifierOut,
+    LocationOut,
+    RelationshipOut,
+)
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
 
 @router.get("/{entity_id}", response_model=EntityProfileOut, summary="Profil podmiotu")
 async def get_entity(session: SessionDep, entity_id: uuid.UUID) -> EntityProfileOut:
-    profile = await EntityRepository(session).get_profile(entity_id)
+    repository = EntityRepository(session)
+    profile = await repository.get_profile(entity_id)
     if profile is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie znaleziono podmiotu")
     return EntityProfileOut(
@@ -26,6 +33,7 @@ async def get_entity(session: SessionDep, entity_id: uuid.UUID) -> EntityProfile
         company=profile.get("company"),
         person=profile.get("person"),
         address=profile.get("address"),
+        financials=[FinancialReportOut(**row) for row in await repository.financials(entity_id)],
         updated_at=profile.get("updated_at"),
     )
 
@@ -63,3 +71,19 @@ async def get_relationships(
         )
         for row in rows
     ]
+
+
+@router.get(
+    "/{entity_id}/location",
+    summary="Współrzędne adresu — geokodowane raz i zapamiętane",
+    description=(
+        "Zwraca współrzędne adresu podmiotu. Pierwsze wywołanie odpytuje Nominatim "
+        "i zapisuje wynik; kolejne czytają z bazy. Nominatim dopuszcza jedno zapytanie "
+        "na sekundę, więc geokodujemy każdy adres najwyżej raz."
+    ),
+)
+async def get_location(session: SessionDep, entity_id: uuid.UUID) -> LocationOut:
+    location = await EntityRepository(session).locate(entity_id)
+    if location is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Nie udało się ustalić lokalizacji")
+    return LocationOut(**location)
