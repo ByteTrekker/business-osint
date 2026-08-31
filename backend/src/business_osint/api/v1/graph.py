@@ -89,5 +89,6 @@ async def get_graph(
             edge_count=len(neighborhood.edges),
             truncated=neighborhood.truncated,
             suppressed_hubs=neighborhood.suppressed_hubs,
+            collapsed_sole_traders=neighborhood.collapsed_sole_traders,
         ),
     )
