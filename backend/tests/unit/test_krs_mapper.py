@@ -1,89 +1,67 @@
-"""Mapper KRS na zamrożonym fragmencie odpisu.
+"""Mapper KRS na zamrożonym, **prawdziwym** odpisie pełnym.
 
-Fixture jest celowo w repo: gdy ministerstwo zmieni schemat, ten test
-zrobi się czerwony zanim graf zacznie po cichu pustoszeć.
+Fixture to nietknięta odpowiedź `api-krs.ms.gov.pl` dla KRS 0000028860
+(ORLEN S.A.) — 419 KB, 786 pól zamaskowanych przez ministerstwo. Jest w repo
+celowo: gdy schemat się zmieni, ten test zrobi się czerwony, zanim graf
+zacznie po cichu pustoszeć.
+
+Poprzednia wersja pliku opisywała schemat **wymyślony** — z niezamaskowanymi
+nazwiskami wspólników i zarządu, i z `naglowekA` wewnątrz `dane`. Prawdziwe API
+nie ma ani jednego, ani drugiego. Testy przechodziły, a opisywały interfejs,
+który nie istnieje; to jest gorsze niż brak testu, bo daje fałszywą pewność.
+
+Dane osobowe w fixture są zamaskowane u źródła (`M***********`), łącznie
+z PESEL-em. Nie ma tu czego anonimizować — ministerstwo zrobiło to za nas
+i właśnie dlatego z KRS nie zbudujemy warstwy osobowej.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
+import pathlib
 
 from business_osint.domain.enums import EntityType, RelationshipType
 from business_osint.etl.sources.krs_mapper import parse_krs_document
 
-ODPIS = {
-    "odpis": {
-        "dane": {
-            "naglowekA": {"numerKRS": "0000111111", "dataRejestracjiWKRS": "2015-03-01"},
-            "dzial1": {
-                "danePodmiotu": {
-                    "nazwa": "ALFA TECHNOLOGIE SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
-                    "formaPrawna": "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
-                    "identyfikatory": {"nip": "5252445170", "regon": "012345675"},
-                },
-                "siedzibaIAdres": {
-                    "siedziba": {"wojewodztwo": "MAZOWIECKIE", "miejscowosc": "WARSZAWA"},
-                    "adres": {
-                        "ulica": "ALEJE JEROZOLIMSKIE",
-                        "nrDomu": "100",
-                        "kodPocztowy": "00-807",
-                        "miejscowosc": "WARSZAWA",
-                    },
-                },
-                "wspolnicy": [
-                    {
-                        "nazwisko": {"nazwiskoICzlonPierwszyNazwiskaZlozonego": "KOWALSKI"},
-                        "imiona": {"imiePierwsze": "JAN"},
-                        "udzialy": {"liczbaUdzialow": "100", "wartoscUdzialow": "50000"},
-                        "dataOd": "2019-01-08",
-                    }
-                ],
-            },
-            "dzial2": {
-                "reprezentacja": {
-                    "nazwaOrganu": "ZARZĄD",
-                    "sklad": [
-                        {
-                            "nazwisko": {"nazwiskoICzlonPierwszyNazwiskaZlozonego": "KOWALSKI"},
-                            "imiona": {"imiePierwsze": "JAN"},
-                            "funkcjaWOrganie": "PREZES ZARZĄDU",
-                            "dataOd": "2018-05-12",
-                        },
-                        {
-                            "nazwisko": {"nazwiskoICzlonPierwszyNazwiskaZlozonego": "NOWAK"},
-                            "imiona": {"imiePierwsze": "ANNA"},
-                            "funkcjaWOrganie": "CZŁONEK ZARZĄDU",
-                            "dataOd": "2020-02-01",
-                            "dataDo": "2023-06-30",
-                        },
-                    ],
-                }
-            },
-        }
-    }
-}
+ODPIS = json.loads(
+    (
+        pathlib.Path(__file__).parent.parent / "fixtures" / "krs_odpis_pelny_0000028860.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 def test_company_is_extracted_with_identifiers() -> None:
     parsed = parse_krs_document(ODPIS)
     company = next(e for e in parsed.entities if e.entity_type is EntityType.COMPANY)
-    assert company.normalized_name == "alfa technologie"
-    assert set(company.identifiers.values()) == {"0000111111", "5252445170", "012345675"}
+    assert "orlen" in company.normalized_name
+    assert "0000028860" in set(company.identifiers.values())
 
 
-def test_board_members_become_relationships_with_validity_period() -> None:
+def test_current_name_wins_over_historical_one() -> None:
+    """Podmiot ma dwie nazwy w odpisie; encja dostaje obowiązującą.
+
+    Nazwa jest w KRS polem wersjonowanym — wzięcie pierwszego elementu tablicy
+    na ślepo dałoby nazwę sprzed zmiany.
+    """
     parsed = parse_krs_document(ODPIS)
-    board = [
+    company = next(e for e in parsed.entities if e.entity_type is EntityType.COMPANY)
+    assert len(ODPIS["odpis"]["dane"]["dzial1"]["danePodmiotu"]["nazwa"]) > 1
+    assert company.display_name == "ORLEN SPÓŁKA AKCYJNA"
+
+
+def test_no_person_entity_is_ever_created_from_krs() -> None:
+    """KRS maskuje nazwiska, więc osoba z tego źródła nie może powstać.
+
+    To nie jest ograniczenie implementacji, tylko niezmiennik N4 od strony
+    źródła: „M***********" pasuje do setek tysięcy ludzi. Encja zbudowana
+    na takim ciągu scalałaby obcych sobie ludzi w jeden węzeł.
+    """
+    parsed = parse_krs_document(ODPIS)
+    assert not [e for e in parsed.entities if e.entity_type is EntityType.PERSON]
+    assert not [
         r for r in parsed.relationships if r.relationship_type is RelationshipType.BOARD_MEMBER_OF
     ]
-    assert len(board) == 2
-    active = next(r for r in board if r.valid_to is None)
-    former = next(r for r in board if r.valid_to is not None)
-    assert active.role == "PREZES ZARZĄDU"
-    assert active.valid_from == dt.date(2018, 5, 12)
-    # To jest dokładnie przypadek "był członkiem zarządu 2020-2023".
-    assert former.valid_from == dt.date(2020, 2, 1)
-    assert former.valid_to == dt.date(2023, 6, 30)
 
 
 def test_every_relationship_carries_a_locator_for_provenance() -> None:
@@ -94,17 +72,57 @@ def test_every_relationship_carries_a_locator_for_provenance() -> None:
 
 def test_address_becomes_its_own_node() -> None:
     parsed = parse_krs_document(ODPIS)
-    address = next(e for e in parsed.entities if e.entity_type is EntityType.ADDRESS)
-    assert "100" in address.display_name
+    addresses = [e for e in parsed.entities if e.entity_type is EntityType.ADDRESS]
+    assert addresses
     assert any(r.relationship_type is RelationshipType.REGISTERED_AT for r in parsed.relationships)
 
 
-def test_shareholder_shares_are_preserved() -> None:
+def test_registered_seat_edge_is_dated_from_the_entry() -> None:
+    """Krawędź siedziby dostaje datę wpisu, nie datę importu.
+
+    ORLEN nigdy nie zmienił siedziby, więc krawędź jest jedna — ale jej
+    `valid_from` musi pochodzić z wpisu nr 1 w rejestrze (2001-07-19),
+    a nie z chwili, w której akurat pobraliśmy dokument.
+    """
     parsed = parse_krs_document(ODPIS)
-    shareholder = next(
-        r for r in parsed.relationships if r.relationship_type is RelationshipType.SHAREHOLDER_OF
+    seat = next(
+        r for r in parsed.relationships if r.relationship_type is RelationshipType.REGISTERED_AT
     )
-    assert shareholder.attributes["shares_count"] == "100"
+    assert seat.valid_from == dt.date(2001, 7, 19)
+    assert seat.valid_to is None
+
+
+def test_name_and_capital_history_carry_real_dates() -> None:
+    """Pola wersjonowane zamieniają się w datowaną historię.
+
+    To jedyne źródło prawdziwej historii, jakie mamy — CEIDG i GLEIF dają
+    wyłącznie stan bieżący. Numery wpisów z odpisu (`nrWpisuWprow`,
+    `nrWpisuWykr`) muszą zostać przetłumaczone na daty, bo sam numer nic
+    użytkownikowi nie mówi.
+    """
+    parsed = parse_krs_document(ODPIS)
+    company = next(e for e in parsed.entities if e.entity_type is EntityType.COMPANY)
+
+    names = company.attributes["name_history"]
+    assert [n["to"] for n in names][-1] is None, "ostatnia nazwa jest otwarta"
+    assert names[0]["value"].startswith("POLSKI KONCERN NAFTOWY")
+    assert names[0]["to"] == "2023-07-03"
+
+    capital = company.attributes["capital_history"]
+    assert len(capital) > 1
+    assert all(entry["from"] for entry in capital)
+
+
+def test_board_is_counted_but_never_identified() -> None:
+    """Zarząd zostaje jako liczba i adnotacja, nie jako węzły osób.
+
+    Informacja „68 wpisów w organie reprezentacji" jest prawdziwa i użyteczna.
+    Zbudowanie z nich encji nie jest możliwe, bo nazwiska są zamaskowane.
+    """
+    parsed = parse_krs_document(ODPIS)
+    company = next(e for e in parsed.entities if e.entity_type is EntityType.COMPANY)
+    assert company.attributes["board_size"] > 0
+    assert company.attributes["board_note"]
 
 
 def test_empty_document_does_not_explode() -> None:
