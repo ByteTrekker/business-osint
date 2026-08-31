@@ -18,6 +18,16 @@ if config.config_file_name is not None:
 config.set_main_option("sqlalchemy.url", get_settings().sync_database_url)
 target_metadata = Base.metadata
 
+#: Tabele pomocnicze ETL powstają i znikają w trakcie importu — nie należą do
+#: schematu i nie mogą pojawiać się w `alembic check` jako rozjazd.
+TRANSIENT_TABLES = {"ceidg_stage", "entity_degree_tmp"}
+
+
+def include_object(obj, name, type_, reflected, compare_to):  # noqa: ANN001, ANN201
+    if type_ == "table" and name in TRANSIENT_TABLES:
+        return False
+    return True
+
 
 def run_migrations_offline() -> None:
     context.configure(
@@ -25,6 +35,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -37,7 +48,12 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            include_object=include_object,
+        )
         with context.begin_transaction():
             context.run_migrations()
 

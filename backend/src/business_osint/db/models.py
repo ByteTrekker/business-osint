@@ -92,6 +92,19 @@ class Entity(Base):
             text("degree DESC"),
             postgresql_where=text("merged_into_id IS NULL"),
         ),
+        # Wyszukiwanie etapowe: prefiks na btree kosztuje 0,3 ms, podczas gdy
+        # trigram przy 9,5 mln encji to sekundy. INCLUDE pozwala odpowiedzieć
+        # bez sięgania do heapu.
+        Index(
+            "ix_entities_name_prefix",
+            text("normalized_name text_pattern_ops"),
+            postgresql_include=["entity_type", "degree"],
+        ),
+        # Świadomie NIE ma tu indeksu GiST na `normalized_name`. Powstał pod
+        # wyszukiwanie po najbliższych sąsiadach (`<->`), które zmierzyliśmy na
+        # 2,9 s i porzuciliśmy — a został jako 2,1 GB, największy indeks w bazie.
+        # Gorzej: planer wybierał go do zwykłej równości i `LIKE`, robiąc z 0,2 ms
+        # 555 ms. Rozmyte dopasowanie obsługuje GIN przez operator `%`.
     )
 
 
@@ -191,6 +204,12 @@ class Address(Base):
     normalized: Mapped[str] = mapped_column(Text, nullable=False)
     #: TERYT/ULIC, jeśli uda się dopasować do rejestru adresowego.
     teryt: Mapped[str | None] = mapped_column(String(16))
+    #: Współrzędne z geokodowania. Wyznaczane raz na adres i zapisywane —
+    #: Nominatim dopuszcza jedno zapytanie na sekundę, więc geokodowanie przy
+    #: każdym wyświetleniu byłoby nadużyciem cudzej usługi.
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    geocoded_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
     entity: Mapped[Entity] = relationship(Entity, lazy="joined")
 
