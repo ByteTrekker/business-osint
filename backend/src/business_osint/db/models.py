@@ -256,6 +256,10 @@ class AddressPoint(Base):
     teryt: Mapped[str | None] = mapped_column(String(16))
     simc: Mapped[str | None] = mapped_column(String(16))
     ulic: Mapped[str | None] = mapped_column(String(16))
+    #: Województwo wyliczone z TERYT przy wczytaniu. Bez niego dopasowanie po
+    #: samej nazwie miejscowości przypisuje „Zawadzie" z Małopolski współrzędne
+    #: „Zawady" z lubuskiego — 400 km dalej.
+    voivodeship: Mapped[str | None] = mapped_column(String(64))
     latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
 
@@ -264,6 +268,7 @@ class AddressPoint(Base):
         # więc btree; jeden adres może mieć w PRG kilka punktów (budynek
         # z wieloma wejściami), dlatego bez unikalności.
         Index("ix_address_points_match_key", "match_key"),
+        Index("ix_address_points_match", "match_key", "voivodeship"),
     )
 
 

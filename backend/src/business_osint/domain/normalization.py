@@ -183,6 +183,46 @@ def street_from_address_line(line: str, *, city: str, building: str | None) -> s
     return rest or line.strip()
 
 
+#: Dwie pierwsze cyfry TERYT to kod województwa. Lista jest urzędowa i stała —
+#: to nie jest reguła normalizacji, tylko słownik, który nie ma prawa się zmienić.
+TERYT_WOJEWODZTWA = {
+    "02": "dolnośląskie",
+    "04": "kujawsko-pomorskie",
+    "06": "lubelskie",
+    "08": "lubuskie",
+    "10": "łódzkie",
+    "12": "małopolskie",
+    "14": "mazowieckie",
+    "16": "opolskie",
+    "18": "podkarpackie",
+    "20": "podlaskie",
+    "22": "pomorskie",
+    "24": "śląskie",
+    "26": "świętokrzyskie",
+    "28": "warmińsko-mazurskie",
+    "30": "wielkopolskie",
+    "32": "zachodniopomorskie",
+}
+
+
+def wojewodztwo_z_teryt(teryt: str | None) -> str | None:
+    """Województwo z kodu TERYT gminy.
+
+    Potrzebne, bo nazwa miejscowości sama nie identyfikuje miejsca: „Zawada",
+    „Buczków" i „Lubień" istnieją w kilku województwach naraz. Dopasowanie
+    punktu adresowego wyłącznie po nazwie i numerze przypisało 7 459 adresom
+    współrzędne oddalone o kilkaset kilometrów.
+
+    >>> wojewodztwo_z_teryt("0812023")
+    'lubuskie'
+    >>> wojewodztwo_z_teryt(None) is None
+    True
+    """
+    if not teryt or len(teryt) < 2:
+        return None
+    return TERYT_WOJEWODZTWA.get(teryt[:2])
+
+
 def address_point_key(*, city: str, street: str, building: str) -> str:
     """Klucz dopasowania adresu do punktu adresowego z rejestru geodezyjnego.
 

@@ -127,6 +127,27 @@ def merge_addresses(
     _echo_data_check(report)
 
 
+@app.command("import-prg")
+def import_prg_cmd(
+    archiwum: str = typer.Argument(..., help="Ścieżka do PRG-punkty_adresowe.zip"),
+) -> None:
+    """Wczytuje punkty adresowe PRG i dopasowuje je do adresów w grafie.
+
+    Rozpakowuje po jednym pliku województwa i kasuje go po przetworzeniu —
+    całość ma 32,4 GB, a każdy plik czytany jest raz.
+    """
+    from pathlib import Path
+
+    from business_osint.etl.prg_pipeline import PrgStats, import_prg
+
+    def show(stats: PrgStats, nazwa: str) -> None:
+        typer.echo(f"  [{stats.files:2}] {nazwa[:44]:46} punktow: {stats.points_loaded:>9,}")
+
+    stats, report = asyncio.run(_with_data_check(import_prg(Path(archiwum), progress=show)))
+    typer.echo(f"\nPRG: {stats.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(

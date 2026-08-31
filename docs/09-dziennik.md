@@ -12,6 +12,52 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — PRG wczytane, i fałszywe dopasowanie złapane w porę
+
+**Wynik.** 8 615 528 punktów adresowych z szesnastu plików GML. **1 946 032
+adresy dostały współrzędne — 82% tych, które w ogóle da się dopasować.**
+Przy okazji 1 946 195 dostało TERYT, czyli urzędowy identyfikator gminy,
+którego rejestry przedsiębiorców nie podają wcale.
+
+Kontrola poprawności, która przekonuje bardziej niż sam odsetek: średnie
+współrzędne w każdym województwie trafiają w jego środek. Śląskie 50,24/18,94,
+mazowieckie 52,23/21,02, wielkopolskie 52,27/17,17. Gdyby dopasowanie było
+losowe, te liczby byłyby nieodróżnialne od siebie.
+
+**Format okazał się inny, niż zakładałem.** PRG rozdziela adres na trzy obiekty:
+punkt niesie numer i współrzędne, a nazwę miejscowości i ulicy trzyma jako
+**referencje `xlink`** do osobnych elementów. To unieważniło plan z DuckDB —
+czyta GML, ale `xlink` zostawia nierozwiązany, a w tym właśnie tkwi cała
+trudność. Parser jest własny, strumieniowy, dwuprzebiegowy.
+
+**Kolejność osi: pułapka, przed którą sam się ostrzegałem, i o mało w nią nie
+wszedłem.** Plik deklaruje `EPSG:2180`, którego urzędowa kolejność to
+(northing, easting), ale zapisuje odwrotnie. Chyrzyno odczytane zgodnie ze
+specyfikacją ląduje w Małopolsce — 350 km dalej, **nadal w Polsce**, więc żadne
+sprawdzenie „czy punkt jest w kraju" tego nie łapie. Rozstrzygnął dopiero pomiar
+na znanym punkcie.
+
+**Błąd, który wyglądał na sukces.** Pierwsza wersja dopasowywała po
+`miejscowość|ulica|numer`. Wynik: 61 088 adresów ze współrzędnymi z jednego
+województwa — wyglądało świetnie. Sprawdzenie, **skąd** pochodzą, pokazało
+**7 459 fałszywych**: „Buczków, małopolskie" dostał punkt z lubuskiego, 400 km
+dalej. Nazwy wsi powtarzają się między województwami.
+
+Gdybym puścił wszystkie pliki bez tego sprawdzenia, byłoby to zapisane
+w setkach tysięcy adresów, a każdy wyglądałby na poprawnie zgeokodowany. To ta
+sama klasa błędu co N4: scalanie na niewystarczającej podstawie.
+
+Naprawa: województwo z kodu TERYT jako warunek rozstrzygający. Jeden wyjątek,
+uzasadniony — klucz występujący w kraju **raz** dopasowujemy bez tego warunku,
+bo brak województwa po naszej stronie to niewiedza, nie sprzeczność. Po
+poprawce na lubuskim: 87,2% trafień, **zero fałszywych**.
+
+**Wniosek procesowy.** Odsetek trafień nie jest miarą poprawności. Pierwsza,
+błędna wersja miała **wyższy** odsetek niż druga — bo dopasowywała także to,
+czego nie powinna.
+
+---
+
 ## 2026-08-31 — Dziennik zmian, i schemat testowy różny od produkcyjnego
 
 **Po co.** Monitoring zmian jest tym, czego konkurencja ma najwięcej, a my nie
