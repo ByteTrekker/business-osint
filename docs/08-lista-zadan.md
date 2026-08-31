@@ -26,6 +26,12 @@ priorytetowi, nie chronologii.
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
 - [x] **„Kto jeszcze pod tym adresem"** — z paginacją i ostrzeżeniem przy
       adresach zbiorczych. Przyjmuje id podmiotu albo id adresu.
+- [x] **Zwijanie węzła osoby dla JDG** — 3 552 803 właścicieli ma dokładnie
+      jedną firmę, więc węzeł osoby powtarzał tylko jej nazwę. Zwijane po
+      stronie serwera, liczba w `meta`.
+- [x] **„Inne firmy tej osoby" — skreślone, nie odłożone.** Osoba fizyczna może
+      mieć w CEIDG jeden wpis; 18 właścicieli na 3,55 mln ma dwie firmy. To nie
+      brak danych, tylko prawo. Wróci, gdy będą spółki cywilne albo CRBR.
 - [x] **Scalanie zduplikowanych adresów** — 12 665 encji scalonych, krawędzie
       przeniesione z zachowaniem N1 i N2, każde scalenie zapisane
       w `entity_merges`. 258 grup pominiętych, bo to miejscowości o tej samej
@@ -143,13 +149,6 @@ priorytetowi, nie chronologii.
 - [ ] **CEIDG `/firma/{id}`** — upadłości, zakazy, spółki cywilne, zarząd
       sukcesyjny. Pola są w API, nie ma ich w raportach zbiorczych.
 - [ ] Suwak `as_of` w interfejsie — API to obsługuje, UI nie wystawia
-- [ ] „Inne firmy tej osoby" — dla właścicieli JDG i wspólników. Analogiczne
-      do sąsiadów spod adresu, tylko po krawędzi `sole_proprietor_of`.
-- [ ] Zwijanie węzła osoby w węzeł firmy dla JDG — dziś graf pokazuje
-      „Jacek Gadomski → właściciel → Jacek Gadomski", co jest szumem
-
-## Zablokowane na zewnątrz
-
 - [ ] **REGON / GUS** — wniosek o bezpłatny klucz. Największy możliwy przyrost:
       z 3,6 mln do ~5 mln podmiotów plus adresy i PKD.
 - [ ] **KRS masowo** — art. 60a ustawy o KRS penalizuje nieuprawnione
