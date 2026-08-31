@@ -32,6 +32,11 @@ priorytetowi, nie chronologii.
 - [x] **„Inne firmy tej osoby" — skreślone, nie odłożone.** Osoba fizyczna może
       mieć w CEIDG jeden wpis; 18 właścicieli na 3,55 mln ma dwie firmy. To nie
       brak danych, tylko prawo. Wróci, gdy będą spółki cywilne albo CRBR.
+- [x] **Dziennik zmian podmiotu** — wyzwalacze bazy na polach nadpisywanych
+      w miejscu, kanał zmian scalający je z bitemporalnością relacji przy
+      odczycie. Fundament pod monitoring i alerty.
+- [x] **Baza testowa na migracjach** — `create_all` nie tworzy wyzwalaczy ani
+      widoków, więc schemat testowy różnił się od produkcyjnego.
 - [x] **Scalanie zduplikowanych adresów** — 12 665 encji scalonych, krawędzie
       przeniesione z zachowaniem N1 i N2, każde scalenie zapisane
       w `entity_merges`. 258 grup pominiętych, bo to miejscowości o tej samej
@@ -106,7 +111,12 @@ priorytetowi, nie chronologii.
         1 zapytania na sekundę to 28 dni odpytywania cudzej infrastruktury —
         to nie jest droga. Zbadane 2026-08-31, są dwie realne:
 
-- [ ] **PRG — masowy import punktów adresowych** (droga główna).
+- [ ] **PRG — masowy import punktów adresowych.** Plik **pobrany**
+      (1 789 364 501 bajtów, 33 pliki GML, 32,4 GB po rozpakowaniu, jeden na
+      województwo). Zostało: odczyt GML przez DuckDB, reprojekcja EPSG:2180 →
+      WGS84 z `always_xy`, dopasowanie po kluczu z migracji 0007.
+      Stan wyjściowy: **10 z 2 421 739 adresów ma współrzędne**.
+      Poprzedni opis źródła:
       `https://opendata.geoportal.gov.pl/prg/adresy/PRG-punkty_adresowe.zip`
       — 1,79 GB, SHP, bez uwierzytelniania i bez ograniczeń, ~7 mln punktów
       adresowych dla całego kraju. Bezpłatne i do dowolnego wykorzystania,
@@ -160,8 +170,6 @@ priorytetowi, nie chronologii.
 - [ ] Kolejka przeglądu dla entity resolution — klucz blokujący jest zapisywany,
       ale nigdzie nie wykorzystywany. Miał generować kandydatów do ręcznej
       oceny; dziś jest martwym polem.
-- [ ] `entity_changes` — tabela zdarzeń domenowych pod alerty. Dopisanie
-      wstecz oznacza utratę historii.
 - [ ] Testy jednostkowe dla nowych źródeł (CEIDG, CIT, BZP, geokoder)
 - [ ] Ścieżka dockerowa nadal nieuruchomiona ani razu. `make test-integration`
       już jej nie używa; zostają `make up`, `make psql` i `make bench`.

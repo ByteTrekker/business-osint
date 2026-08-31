@@ -12,6 +12,50 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Dziennik zmian, i schemat testowy różny od produkcyjnego
+
+**Po co.** Monitoring zmian jest tym, czego konkurencja ma najwięcej, a my nie
+mieliśmy wcale. Pilność brała się z jednej rzeczy: **status, forma prawna,
+kapitał i nazwa są nadpisywane w miejscu**, więc każdy import bez dziennika
+kasował poprzednią wartość bezpowrotnie.
+
+**Zakres celowo wąski.** Logujemy wyłącznie pola nadpisywane w miejscu. Relacje
+są bitemporalne, więc ich historia jest odtwarzalna z `recorded_at`
+i `superseded_at`; dublowanie jej w dzienniku podwoiłoby zapis przy imporcie
+3,5 mln krawędzi i nie dołożyło ani jednej informacji. Kanał zmian scala oba
+źródła **dopiero przy odczycie**.
+
+**Wyzwalacze bazy, nie kod aplikacji.** Do `companies` i `entities` pisze ORM,
+zbiorczy SQL importu CEIDG i wzbogacanie z KRS. Wpięcie się w każdą ścieżkę
+z osobna oznaczałoby, że następna dopisana po cichu przestanie logować. Jest
+test, który celowo używa zbiorczego `UPDATE ... FROM`, żeby nikt nie przeniósł
+logowania do warstwy aplikacji.
+
+**Znalezione przy okazji, i większe od samej funkcji.** Testy dziennika padły,
+bo baza testowa powstawała przez `Base.metadata.create_all`. Tworzy on tabele
+i indeksy, ale **nie wyzwalacze ani widoki** — te istnieją tylko w migracjach.
+Schemat testowy różnił się więc od produkcyjnego, a conftest nadrabiał to,
+przepisując widok `graph_edges` ręcznie: druga definicja tego samego obiektu.
+To ta sama klasa błędu co przy normalizacji adresów i przy fixture KRS.
+
+Baza testowa idzie teraz przez `alembic upgrade head`. Testy działają na tym
+samym schemacie co produkcja i cała klasa cichego rozjazdu znika.
+
+**Dwie pułapki po drodze.**
+
+* `now()` w PostgreSQL zwraca czas **rozpoczęcia transakcji**, więc wszystkie
+  zmiany z jednego importu mają identyczny znacznik. To użyteczne — widać, co
+  przyszło razem — ale nie porządkuje ich między sobą; remis rozstrzyga rosnący
+  klucz dziennika.
+* Izolacja testów przez wycofanie transakcji ukrywa zapisy przed **innymi
+  połączeniami**. Testy kolejki zadań sprawdzają `SKIP LOCKED` między dwoma
+  workerami i przestały działać. Sprzątanie idzie przez `TRUNCATE`.
+
+**Ograniczenie, które trzeba powiedzieć wprost.** Dziennik zaczyna się w dniu
+wdrożenia. Zmian sprzed niego nie da się odzyskać — i to była cała pilność.
+
+---
+
 ## 2026-08-31 — Co piąty przedsiębiorca nie ma w CEIDG adresu
 
 **Pytanie brzmiało: czy da się ukryć adres w CEIDG.** Odpowiedziałem trzy razy

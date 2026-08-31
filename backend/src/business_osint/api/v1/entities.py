@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from business_osint.api.deps import SessionDep
 from business_osint.repositories.entities import EntityRepository
 from business_osint.schemas.entity import (
+    ChangeOut,
+    ChangePageOut,
     CoLocatedOut,
     CoLocatedPageOut,
     EntityProfileOut,
@@ -162,6 +164,42 @@ async def get_co_located(
         for row in rows
     ]
     return CoLocatedPageOut(
+        items=items,
+        meta=PageMeta(
+            limit=limit,
+            offset=offset,
+            returned=len(items),
+            has_more=offset + len(items) < total,
+            total=total,
+        ),
+    )
+
+
+@router.get(
+    "/{entity_id}/changes",
+    response_model=ChangePageOut,
+    summary="Oś czasu zmian podmiotu",
+    description=(
+        "Łączy dwa źródła prawdy. Zmiany atrybutów pochodzą z dziennika zapisywanego "
+        "przez wyzwalacze bazy — import nadpisuje te pola w miejscu, więc bez "
+        "dziennika poprzednia wartość znika bezpowrotnie. Zmiany powiązań są "
+        "odtwarzane wstecz z bitemporalności relacji i **nie** są dublowane "
+        "w dzienniku.\n\n"
+        "Dziennik zaczyna się w dniu wdrożenia tej funkcji: zmian sprzed niego nie "
+        "da się odzyskać, bo nadpisane wartości nie zostały nigdzie zapisane."
+    ),
+)
+async def get_changes(
+    session: SessionDep,
+    entity_id: uuid.UUID,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ChangePageOut:
+    repo = EntityRepository(session)
+    total = await repo.count_changes(entity_id)
+    rows = await repo.changes(entity_id, limit=limit, offset=offset)
+    items = [ChangeOut(**{k: v for k, v in row.items() if k != "kolejnosc"}) for row in rows]
+    return ChangePageOut(
         items=items,
         meta=PageMeta(
             limit=limit,
