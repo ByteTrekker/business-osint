@@ -24,6 +24,9 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **KRS jako wzbogacanie na żądanie** — `enrich-krs`, endpoint
+      `POST /entities/{id}/enrich/krs`, czas życia odpisu 30 dni, historia nazw
+      i kapitału w interfejsie. Historia była wcześniej liczona i wyrzucana.
 - [x] **Kontrole danych wpięte w bramki i w ETL** — `make data-check`,
       `make check-db`, plus werdykt po każdym imporcie. Przy okazji naprawiony
       `make test-integration`, który szedł przez Dockera i nie wykonał się nigdy.
@@ -68,9 +71,6 @@ priorytetowi, nie chronologii.
 
 ## Do zrobienia — funkcje
 
-- [ ] **KRS jako wzbogacanie na żądanie** + mechanizm TTL. Mapper gotowy
-      i przetestowany: daje 25 lat datowanej historii — nazwy, siedziby, kapitał,
-      każda zmiana z numerem i datą wpisu. To jedyne źródło prawdziwej historii.
 - [ ] **Mapa zbiorcza podmiotów** z grupowaniem znaczników.
       - klastrowanie po stronie serwera: agregacja po siatce zależnej od poziomu
         przybliżenia, zwracamy liczności zamiast punktów — 2,4 mln znaczników

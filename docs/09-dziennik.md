@@ -12,6 +12,46 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — KRS na żądanie: historia była liczona i wyrzucana
+
+**Objaw, którego nie było widać.** Mapper KRS produkował datowaną historię
+nazw, siedzib i kapitału — i nic z tego nie trafiało do bazy. `EntityResolver`
+wypełnia tabelę `companies` **wyłącznie przy tworzeniu encji**, a encja
+z numerem KRS zwykle już istnieje, bo przyszła z GLEIF albo z CEIDG.
+Dopasowanie po identyfikatorze nie aktualizowało niczego. Kod działał, testy
+mappera przechodziły, a efekt był zerowy.
+
+**Decyzja.** Osobny krok `apply_company_facts`, który przenosi fakty z odpisu na
+istniejący wiersz. Atrybuty dopisujemy **scaleniem** (`||`), nie podmianą:
+`companies.attributes` może już nieść dane z innego źródła, a odpis ma je
+uzupełnić, nie wymieść. Przenosimy jawną listę pól, nie „wszystko, co przyszło" —
+cicha zgoda na dowolne pole oznacza, że zmiana w mapperze wsypuje do bazy rzeczy,
+na które nikt się nie zgodził.
+
+**Czas życia dokumentu: 30 dni.** Wpisy w KRS zmieniają się w tempie miesięcy,
+a każde pobranie obciąża rejestr ministerstwa. Świeżość liczymy po **dokumencie**,
+nie po encji — ten sam odpis dotyczy spółki i jej wspólników korporacyjnych,
+a pobranie ma kosztować raz.
+
+**Pułapka asyncpg, drugi raz ta sama klasa.** `CAST(:registered_on AS date)`
+sprawia, że asyncpg wnioskuje typ parametru jako `date` i **odrzuca napis**:
+`invalid input for query argument $3: '2001-07-19'`. Konwersja musi być po
+stronie Pythona — `dt.date` i `Decimal`, nie `str`. Ani ruff, ani mypy tego nie
+widzą, bo to surowy SQL; wychodzi dopiero na żywym połączeniu.
+
+**Wynik na ORLEN-ie.** Forma prawna z nieczytelnego kodu GLEIF `FJ0E` na
+`SPÓŁKA AKCYJNA`, data rejestracji 2001-07-19, kapitał 1 451 177 561,25 zł,
+dwie nazwy w historii (zmiana z „POLSKI KONCERN NAFTOWY ORLEN" 3 lipca 2023),
+cztery zmiany kapitału, 68 wpisów w organie reprezentacji. Powtórne wywołanie
+pomija pobranie: „odpis z 2026-08-31 jest w czasie życia".
+
+**Drobiazg z interfejsu.** Napisałem CSS na zmiennej `--border`, która w tym
+projekcie nie istnieje — nazywa się `--line`. Oś czasu renderowała się bez
+linii, a nic nie zgłosiło błędu: nieistniejąca zmienna CSS to po prostu pusta
+wartość. Wyszło dopiero przy sprawdzeniu wyliczonych stylów w przeglądarce.
+
+---
+
 ## 2026-08-31 — Kontrole danych faktycznie się uruchamiają
 
 **Objaw, którego nikt nie zgłosił.** Moduł `etl.quality` ma w docstringu
