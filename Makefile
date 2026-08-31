@@ -87,9 +87,18 @@ check-db: migration-check test-integration data-check ## Bramki wymagające Post
 psql: ## Konsola SQL
 	$(COMPOSE) exec db psql -U osint -d osint
 
-bench: ## Generuje syntetyczny graf i mierzy czas zapytań
-	$(COMPOSE) exec api python -m business_osint.cli seed && \
+# Pomiar przez kontrakt HTTP — jedyna rzecz, która nie zmienia się przy
+# wymianie języka backendu albo bazy danych. `ops/bench.sql` pokazuje plany
+# zapytań PostgreSQL i zostaje do strojenia indeksów, ale odpowiada na inne
+# pytanie i przestaje działać po zmianie bazy.
+bench: ## Mierzy wydajność przez API (wymaga działającego backendu)
+	python3 ops/benchmark/run.py --out ops/benchmark/results/$(shell date +%Y%m%d-%H%M%S).json
+
+bench-compare: ## Zestawia dwa przebiegi: make bench-compare PRZED=... PO=...
+	python3 ops/benchmark/run.py --compare "$(PRZED)" "$(PO)"
+
+bench-sql: ## Plany zapytań PostgreSQL — do strojenia indeksów, zależne od bazy
 	$(COMPOSE) exec db psql -U osint -d osint -f /dev/stdin < ops/bench.sql
 
 .PHONY: help dev-api dev-web db-local up down logs migrate revision seed test test-integration lint format \
-        typecheck coverage mutation audit migration-check commits check check-db data-check psql bench
+        typecheck coverage mutation audit migration-check commits check check-db data-check psql bench bench-compare bench-sql

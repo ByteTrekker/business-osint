@@ -54,6 +54,10 @@ also_copy = [
     "pyproject.toml",
     "src/business_osint/__init__.py",
     "src/business_osint/etl/",
+    # Runner pomiarowy leży poza pakietem, bo ma działać bez instalowania
+    # czegokolwiek. Jego test ładuje go po ścieżce, więc plik musi być
+    # w piaskownicy — inaczej zbieranie testów pada i mutmut nie startuje.
+    "ops/",
 ]
 # Tylko testy jednostkowe — integracyjne wymagałyby bazy przy każdym mutancie.
 pytest_add_cli_args_test_selection = ["tests/unit/"]
