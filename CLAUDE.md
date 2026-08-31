@@ -52,6 +52,12 @@ Pułapki, które już raz przeszły przez lokalne testy i wywróciły CI albo ru
   zamkniętej pętli. Jeżeli po imporcie ma się wykonać cokolwiek jeszcze
   (np. kontrole danych), musi to być **ta sama** pętla — patrz
   `_with_data_check` w `cli.py`.
+* **Funkcja korzystająca z `get_etl_sessionmaker()` pracuje na bazie
+  produkcyjnej także wtedy, gdy wywoła ją test.** Fixture `db_session` jej nie
+  przechwyci — silnik ETL ma własne połączenie. Każda taka funkcja musi mieć
+  wariant przyjmujący sesję (`execute_checks`, `merge_batch`), a testy wołają
+  **wyłącznie** ten wariant. Pominięcie tego raz scaliło 12 665 encji
+  w produkcyjnej bazie z poziomu testu.
 * PostgreSQL normalizuje `'epoch'::date` do `'1970-01-01'::date` w wyrażeniach
   indeksów — model musi używać tej samej postaci.
 
