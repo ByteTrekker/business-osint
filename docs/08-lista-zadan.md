@@ -24,6 +24,9 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **Kontrole danych wpięte w bramki i w ETL** — `make data-check`,
+      `make check-db`, plus werdykt po każdym imporcie. Przy okazji naprawiony
+      `make test-integration`, który szedł przez Dockera i nie wykonał się nigdy.
 - [x] **Bramki, commity i push** — 10 commitów w PR #2, stos PR #2 → #3 → #4.
 - [x] **Reimport CEIDG z naprawą pochodzenia** — krawędzie bez źródła
       6 392 682 → 733, adresy z numerem budynku 0 → 2 373 660, zero skasowanych
@@ -41,8 +44,6 @@ priorytetowi, nie chronologii.
 
 ## Do zrobienia — pilne
 
-- [ ] **Wpiąć `check-data` w bramki** — teraz, gdy wszystkie kontrole
-      przechodzą. Wymaga bazy, więc obok `make test-integration`, nie w `make check`.
 
 ## Znalezione przy okazji
 
@@ -133,4 +134,5 @@ priorytetowi, nie chronologii.
 - [ ] `entity_changes` — tabela zdarzeń domenowych pod alerty. Dopisanie
       wstecz oznacza utratę historii.
 - [ ] Testy jednostkowe dla nowych źródeł (CEIDG, CIT, BZP, geokoder)
-- [ ] Ścieżka dockerowa nadal nieuruchomiona ani razu
+- [ ] Ścieżka dockerowa nadal nieuruchomiona ani razu. `make test-integration`
+      już jej nie używa; zostają `make up`, `make psql` i `make bench`.

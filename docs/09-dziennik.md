@@ -12,6 +12,38 @@ Kolejność odwrotna — najnowsze na górze.
 
 ---
 
+## 2026-08-31 — Kontrole danych faktycznie się uruchamiają
+
+**Objaw, którego nikt nie zgłosił.** Moduł `etl.quality` ma w docstringu
+„asercje uruchamiane po imporcie". Przez dobę nie wołała go **żadna** komenda.
+To jest dokładnie to samo przeoczenie, które opisuje jego własny docstring:
+zapytanie wykrywające 69 tys. fałszywych scaleń też dało się napisać w minutę
+i też nikt go nie napisał.
+
+**Decyzja.** Każda komenda ETL kończy się werdyktem kontroli. Raport **nie**
+przerywa procesu kodem błędu, bo kontrole mierzą stan całej bazy — import,
+który zrobił swoje, nie może wyglądać na nieudany z powodu długu sprzed
+tygodnia. Twardą bramką jest `make data-check` z kodem wyjścia 1.
+
+**Pułapka, na którą prawie wszedłem.** Kontrole musiały pójść w **tej samej
+pętli zdarzeń** co import. Drugie `asyncio.run()` dostałoby połączenia przypięte
+do już zamkniętej pętli — ta sama pułapka kosztowała już raz debugowanie przy
+imporcie GLEIF. Stąd `_with_data_check`, który opakowuje korutynę importu,
+zamiast uruchamiać kontrole osobno.
+
+**Znalezione przy okazji.** `make test-integration` szedł przez
+`docker compose exec` i **nie wykonał się ani razu** — demon Dockera jest
+wyłączony przez całą historię tego projektu. CI tymczasem uruchamia te testy
+natywnie, przeciwko usłudze Postgresa. Cel w Makefile obiecywał coś, czego nigdy
+nie zrobił, co jest gorsze niż jego brak, bo czyta się jak pokrycie. Zrównany
+z tym, co robi CI i co i tak uruchamiałem ręcznie.
+
+**Czego nie zrobiłem.** `check-data` nie trafia do CI. Baza CI jest pusta po
+migracjach, więc każda kontrola przeszłaby tam zawsze. W CI biegną za to testy
+samych kontroli, i to one mają wartość.
+
+---
+
 ## 2026-08-31 — Reimport CEIDG i dwa naruszenia, które nim nie zniknęły
 
 **Wynik reimportu.** 17 województw, 3 562 642 wiersze, zero błędów. Krawędzie

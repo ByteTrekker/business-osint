@@ -3,10 +3,50 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
 
 import typer
 
+from business_osint.etl.quality import QualityReport
+
 app = typer.Typer(help="business-osint — narzędzia operacyjne")
+
+
+# Kontrole jakości danych mają sens tylko wtedy, gdy ktoś je odpala. Moduł
+# `etl.quality` powstał z opisem „uruchamiane po imporcie", a przez chwilę nie
+# wołała go żadna komenda — dokładnie tak jak wcześniej nikt nie pisał zapytania,
+# które wykryłoby 69 tys. fałszywych scaleń. Teraz każdy import kończy się
+# raportem.
+#
+# Uruchamiamy je **w tej samej pętli zdarzeń** co import. Drugie `asyncio.run()`
+# dostałoby połączenia przypięte do już zamkniętej pętli — ta pułapka kosztowała
+# już raz debugowanie przy imporcie GLEIF.
+
+
+async def _with_data_check[T](work: Awaitable[T]) -> tuple[T, QualityReport]:
+    from business_osint.etl.quality import run_checks
+
+    result = await work
+    return result, await run_checks()
+
+
+def _echo_data_check(report: QualityReport) -> None:
+    """Wypisuje werdykt kontroli. **Nie** przerywa procesu kodem błędu.
+
+    Kontrole mierzą stan całej bazy, nie tylko tego, co właśnie doszło. Import,
+    który zrobił swoje, nie może wyglądać na nieudany z powodu długu sprzed
+    tygodnia. Od twardej bramki jest `check-data`.
+    """
+    if report.ok:
+        typer.echo(f"Kontrole danych: {len(report.results)}/{len(report.results)} OK")
+        return
+    typer.secho(
+        f"Kontrole danych: {len(report.failed)} z {len(report.results)} NIEUDANE",
+        fg=typer.colors.RED,
+    )
+    for result in report.failed:
+        typer.echo(f"  [{result.check.invariant}] {result.check.name}: {result.violations}")
+    typer.echo("Szczegóły: make data-check")
 
 
 @app.command()
@@ -59,7 +99,8 @@ def ingest_krs(
     """
     from business_osint.etl.pipeline import ingest_single_krs
 
-    stats = asyncio.run(ingest_single_krs(krs, registry=registry))
+    stats, report = asyncio.run(_with_data_check(ingest_single_krs(krs, registry=registry)))
+    _echo_data_check(report)
     typer.echo(stats)
 
 
@@ -100,6 +141,9 @@ def import_gleif(
             typer.echo(f"Dociągnięte kontrahenty: {missing.as_dict()}")
             rel_stats = await import_relationships()
             typer.echo(f"Relacje właścicielskie: {rel_stats.as_dict()}")
+        from business_osint.etl.quality import run_checks
+
+        _echo_data_check(await run_checks())
 
     asyncio.run(run_all())
 
@@ -118,8 +162,11 @@ def enrich_whitelist(
             nl=False,
         )
 
-    stats = asyncio.run(enrich_identifiers(limit=limit or None, progress=show))
+    stats, report = asyncio.run(
+        _with_data_check(enrich_identifiers(limit=limit or None, progress=show))
+    )
     typer.echo(f"\nBiała lista VAT: {stats.as_dict()}")
+    _echo_data_check(report)
 
 
 @app.command("import-bzp")
@@ -134,8 +181,9 @@ def import_bzp(days: int = typer.Option(30, help="Ile dni wstecz pobrać")) -> N
             nl=False,
         )
 
-    stats = asyncio.run(import_notices(days_back=days, progress=show))
+    stats, report = asyncio.run(_with_data_check(import_notices(days_back=days, progress=show)))
     typer.echo(f"\nBZP: {stats.as_dict()}")
+    _echo_data_check(report)
 
 
 @app.command("import-cit")
@@ -146,8 +194,9 @@ def import_cit(
     """Importuje dane finansowe z wykazu podatników CIT (art. 27b)."""
     from business_osint.etl.cit_pipeline import import_cit_file
 
-    stats = asyncio.run(import_cit_file(path, dataset=dataset))
+    stats, report = asyncio.run(_with_data_check(import_cit_file(path, dataset=dataset)))
     typer.echo(f"CIT [{dataset}]: {stats.as_dict()}")
+    _echo_data_check(report)
 
 
 @app.command("import-ceidg")
@@ -174,10 +223,13 @@ def import_ceidg(
             f"relacje={stats.relationships:>8}"
         )
 
-    stats = asyncio.run(
-        import_all_regions(settings.ceidg_token, only_region=region or None, progress=show)
+    stats, report = asyncio.run(
+        _with_data_check(
+            import_all_regions(settings.ceidg_token, only_region=region or None, progress=show)
+        )
     )
     typer.echo(f"\nCEIDG: {stats.as_dict()}")
+    _echo_data_check(report)
     for err in stats.errors[:5]:
         typer.echo(f"  blad: {err}", err=True)
 
