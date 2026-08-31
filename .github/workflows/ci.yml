@@ -3,7 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+  # `edited` jest tu konieczne, a nie ozdobne: bez niego zmiana tytułu pull
+  # requesta nie wyzwala niczego, a bramka sprawdza właśnie tytuł. Ponowne
+  # uruchomienie przebiegu odtwarza **stare** zdarzenie, więc poprawiony tytuł
+  # nadal wygląda na błędny i PR zostaje zablokowany bez powodu.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 # Nowy push do tej samej gałęzi anuluje poprzedni przebieg — nie płacimy
 # za weryfikację nieaktualnego kodu.
