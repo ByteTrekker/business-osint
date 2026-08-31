@@ -86,6 +86,25 @@ class RelationshipPageOut(BaseModel):
     meta: PageMeta
 
 
+class CoLocatedOut(BaseModel):
+    """Podmiot dzielący adres z oglądanym."""
+
+    id: uuid.UUID
+    type: str
+    name: str
+    nip: str | None = None
+    krs: str | None = None
+    status: str | None = None
+    valid_from: dt.date | None = None
+    valid_to: dt.date | None = None
+    degree: int
+
+
+class CoLocatedPageOut(BaseModel):
+    items: list[CoLocatedOut]
+    meta: PageMeta
+
+
 class FinancialReportOut(BaseModel):
     """Dane finansowe za okres sprawozdawczy."""
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import Pager from "@/components/Pager";
+import CoLocated from "@/components/CoLocated";
 import { RelationshipGraph } from "@/components/RelationshipGraph";
 import { CompanyFacts } from "@/components/CompanyFacts";
 import CompanyHistory from "@/components/CompanyHistory";
@@ -32,11 +33,12 @@ export default async function EntityPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ rel?: string }>;
+  searchParams: Promise<{ rel?: string; loc?: string }>;
 }) {
   const { id } = await params;
-  const { rel } = await searchParams;
+  const { rel, loc } = await searchParams;
   const relOffset = Math.max(0, Number.parseInt(rel ?? "0", 10) || 0);
+  const locOffset = Math.max(0, Number.parseInt(loc ?? "0", 10) || 0);
   const [profile, relationships] = await Promise.all([
     api.entity(id).catch(() => null),
     api.relationships(id, relOffset).catch(() => null),
@@ -118,6 +120,8 @@ export default async function EntityPage({
           />
         )}
       </section>
+
+      <CoLocated entityId={id} offset={locOffset} href={(next) => `/entity/${id}?loc=${next}`} />
     </>
   );
 }

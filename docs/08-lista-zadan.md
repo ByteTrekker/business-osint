@@ -24,6 +24,8 @@ priorytetowi, nie chronologii.
       status i stopień. „ORLEN" zwraca ORLEN S.A., nie „Orlena Hintzke".
 - [x] **Usunięty indeks GiST** — 2,1 GB, największy w bazie, użyty 26 razy
       i psujący plany (`normalized_name = 'orlen'` szło z 0,2 ms na 555 ms).
+- [x] **„Kto jeszcze pod tym adresem"** — z paginacją i ostrzeżeniem przy
+      adresach zbiorczych. Przyjmuje id podmiotu albo id adresu.
 - [x] **Szukanie po adresie** — rozdzielone dwie role adresu: klucz scalania
       zostaje sklejony, pole wyszukiwania dostaje granice słów. 2,4 mln wierszy
       przepisanych partiami. „chemikow plock" → 6 ms zamiast zera wyników.
@@ -134,8 +136,8 @@ priorytetowi, nie chronologii.
 - [ ] **CEIDG `/firma/{id}`** — upadłości, zakazy, spółki cywilne, zarząd
       sukcesyjny. Pola są w API, nie ma ich w raportach zbiorczych.
 - [ ] Suwak `as_of` w interfejsie — API to obsługuje, UI nie wystawia
-- [ ] „Kto jeszcze pod tym adresem" i „inne firmy tej osoby" — mamy komplet
-      danych, tylko tego nie liczymy
+- [ ] „Inne firmy tej osoby" — dla właścicieli JDG i wspólników. Analogiczne
+      do sąsiadów spod adresu, tylko po krawędzi `sole_proprietor_of`.
 - [ ] Zwijanie węzła osoby w węzeł firmy dla JDG — dziś graf pokazuje
       „Jacek Gadomski → właściciel → Jacek Gadomski", co jest szumem
 

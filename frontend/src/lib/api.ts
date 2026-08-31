@@ -127,6 +127,20 @@ export type PageMeta = {
 
 export const SEARCH_PAGE_SIZE = 20;
 export const RELATIONSHIP_PAGE_SIZE = 50;
+export const CO_LOCATED_PAGE_SIZE = 25;
+
+/** Podmiot dzielący adres z oglądanym. */
+export type CoLocated = {
+  id: string;
+  type: EntityType;
+  name: string;
+  nip: string | null;
+  krs: string | null;
+  status: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  degree: number;
+};
 
 export const api = {
   search: (q: string, { fuzzy = false, offset = 0, status = "" } = {}) =>
@@ -139,6 +153,10 @@ export const api = {
   relationships: (id: string, offset = 0) =>
     get<{ items: Relationship[]; meta: PageMeta }>(
       `/entities/${id}/relationships?limit=${RELATIONSHIP_PAGE_SIZE}&offset=${offset}`,
+    ),
+  coLocated: (id: string, offset = 0) =>
+    get<{ items: CoLocated[]; meta: PageMeta }>(
+      `/entities/${id}/co-located?limit=${CO_LOCATED_PAGE_SIZE}&offset=${offset}`,
     ),
   graph: (id: string, depth = 2, includeHistorical = false) =>
     get<GraphResponse>(`/graph/${id}?depth=${depth}&include_historical=${includeHistorical}`),
