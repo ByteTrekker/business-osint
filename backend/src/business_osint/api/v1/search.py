@@ -42,10 +42,20 @@ async def search(
             ),
         ),
     ] = None,
+    pkd: Annotated[
+        str | None,
+        Query(
+            pattern=r"^[0-9]{2}\.?[0-9]{0,2}\.?[A-Z]?$",
+            description=(
+                "Filtr PKD po prefiksie: 62 to ca\u0142a informatyka, "
+                "62.01.Z jedna klasa. Zaw\u0119\u017caj\u0105cy jak wojew\u00f3dztwo."
+            ),
+        ),
+    ] = None,
     sort: Annotated[
         str,
         Query(
-            pattern="^(relevance|degree|name)$",
+            pattern="^(relevance|degree|name|registered|city|status)$",
             description=(
                 "Porządek wyniku. `relevance` to kolejność etapów wyszukiwania. "
                 "Pozostałe porządkują **200 najlepszych trafień**, a nie cały "
@@ -76,6 +86,7 @@ async def search(
         entity_type=type,
         status=status,
         voivodeship=voivodeship,
+        pkd=pkd,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -92,6 +103,13 @@ async def search(
                 subtitle=h.subtitle,
                 score=h.score,
                 degree=h.degree,
+                nip=h.nip,
+                krs=h.krs,
+                status=h.status,
+                city=h.city,
+                voivodeship=h.voivodeship,
+                registered_on=h.registered_on,
+                pkd=h.pkd,
             )
             for h in hits
         ],

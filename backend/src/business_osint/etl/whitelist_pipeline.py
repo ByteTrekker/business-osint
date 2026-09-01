@@ -37,6 +37,51 @@ from business_osint.etl.sources.mf_whitelist import (
 #: licznik błędów jest szumem, a nie sygnałem.
 MAX_KOLEJNYCH_BLEDOW = 20
 
+#: Do czego biała lista jest naprawdę potrzebna.
+#:
+#: `bridge` — wyłącznie podmioty, które **mogą** mieć numer KRS: mają NIP,
+#: nie mają jeszcze KRS-u i nie są jednoosobową działalnością z CEIDG.
+#: Jednoosobowa działalność nie ma numeru KRS z definicji, więc odpytywanie
+#: o nią mostu identyfikatorowego jest pracą bez możliwego wyniku.
+#:
+#: Pierwszy przebieg poszedł po wszystkich 3 560 269 numerach i to była pomyłka
+#: w planie, nie w kodzie: z 5 610 sprawdzonych NIP-ów KRS przybyło dla 105,
+#: czyli 1,9 procent. Zbiór `bridge` to 7 343 numery — 245 zapytań zamiast
+#: 118 676, czyli różnica między zadaniem na lata a na kilka minut.
+#:
+#: `all` zostaje, bo REGON przybywa także dla działalności jednoosobowych
+#: (55 procent trafień) — ale to jest osobny cel i osobna decyzja o koszcie.
+ZAKRESY = ("bridge", "all")
+
+# Dwa pełne zapytania zamiast jednego sklejanego z fragmentów. Sklejanie
+# działałoby tak samo, ale każdy czytający — i lintera też — musiałby najpierw
+# sprawdzić, skąd bierze się doklejany kawałek.
+_CELE = {
+    "bridge": text("""
+        SELECT i.value AS nip, i.entity_id
+        FROM entity_identifiers i
+        WHERE i.scheme = 'nip'
+          AND (CAST(:after AS text) IS NULL OR i.value > CAST(:after AS text))
+          AND NOT EXISTS (SELECT 1 FROM entity_identifiers k
+                          WHERE k.entity_id = i.entity_id AND k.scheme = 'krs')
+          AND NOT EXISTS (
+            SELECT 1 FROM relationships r
+            WHERE r.target_entity_id = i.entity_id
+              AND r.relationship_type = 'sole_proprietor_of'
+              AND r.superseded_at IS NULL)
+        ORDER BY i.value
+        LIMIT CAST(:limit AS bigint)
+    """),
+    "all": text("""
+        SELECT i.value AS nip, i.entity_id
+        FROM entity_identifiers i
+        WHERE i.scheme = 'nip'
+          AND (CAST(:after AS text) IS NULL OR i.value > CAST(:after AS text))
+        ORDER BY i.value
+        LIMIT CAST(:limit AS bigint)
+    """),
+}
+
 
 @dataclass(slots=True)
 class WhitelistStats:
@@ -63,7 +108,11 @@ class WhitelistStats:
 
 
 async def enrich_identifiers(
-    *, limit: int | None = None, after: str | None = None, progress: Any = None
+    *,
+    limit: int | None = None,
+    after: str | None = None,
+    scope: str = "bridge",
+    progress: Any = None,
 ) -> WhitelistStats:
     """Dla każdego znanego NIP-u dopina REGON i KRS z białej listy.
 
@@ -82,16 +131,7 @@ async def enrich_identifiers(
         # LIMIT jako parametr, nie sklejanie napisu: NULL oznacza brak limitu,
         # a zapytanie zostaje jedną, niezmienną stałą (bez ryzyka wstrzyknięcia).
         rows = await session.execute(
-            text(
-                """
-                SELECT i.value AS nip, i.entity_id
-                FROM entity_identifiers i
-                WHERE i.scheme = 'nip'
-                  AND (CAST(:after AS text) IS NULL OR i.value > CAST(:after AS text))
-                ORDER BY i.value
-                LIMIT CAST(:limit AS bigint)
-                """
-            ),
+            _CELE[scope if scope in ZAKRESY else "bridge"],
             {"limit": limit, "after": after},
         )
         targets = {row.nip: row.entity_id for row in rows}

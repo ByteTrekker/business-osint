@@ -663,3 +663,61 @@ h2 {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+
+/* Lista wyników jako tabela: kolumny dają się sortować, a napis „KRS 1 · NIP 2
+   · Gdańsk” nie dawał się posortować po mieście. */
+.hits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.hits-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  padding: 0 0.7rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.hits-table th:first-child,
+.hits-table td:first-child {
+  padding-left: 0;
+}
+
+.hits-table th a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hits-table th a:hover,
+.hits-table th a.sorted {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.hits-table td {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.hits-table td.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hits-table td:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.hits-table .badge {
+  align-self: flex-start;
+}

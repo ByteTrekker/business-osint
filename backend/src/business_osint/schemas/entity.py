@@ -21,6 +21,15 @@ class SearchHitOut(BaseModel):
     subtitle: str | None = None
     score: float
     degree: int
+    # Rozbite na osobne pola, bo lista ma się dać sortować po kolumnie —
+    # `subtitle` zostaje dla widoków, które chcą jedną linijkę.
+    nip: str | None = None
+    krs: str | None = None
+    status: str | None = None
+    city: str | None = None
+    voivodeship: str | None = None
+    registered_on: dt.date | None = None
+    pkd: str | None = None
 
 
 class PageMeta(BaseModel):
