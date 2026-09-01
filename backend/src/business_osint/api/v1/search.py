@@ -30,6 +30,30 @@ async def search(
             description="Filtr stanu działalności; nie dotyczy szukania po identyfikatorze",
         ),
     ] = None,
+    voivodeship: Annotated[
+        str | None,
+        Query(
+            max_length=64,
+            description=(
+                "Filtr województwa. Zawężający: podmioty bez zapisanego "
+                "województwa (wszystko spoza CEIDG) wypadają z wyniku, bo "
+                "pytanie brzmi \u201ew tym wojew\u00f3dztwie\u201d, a nie "
+                "\u201emo\u017ce w tym\u201d."
+            ),
+        ),
+    ] = None,
+    sort: Annotated[
+        str,
+        Query(
+            pattern="^(relevance|degree|name)$",
+            description=(
+                "Porządek wyniku. `relevance` to kolejność etapów wyszukiwania. "
+                "Pozostałe porządkują **200 najlepszych trafień**, a nie cały "
+                "zbi\u00f3r dopasowa\u0144: wyszukiwarka jest etapowa i nie zna go "
+                "\u2014 dla prefiksu \u201ea\u201d jest ich 830 tys."
+            ),
+        ),
+    ] = "relevance",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     offset: Annotated[
         int,
@@ -48,7 +72,14 @@ async def search(
     ] = False,
 ) -> SearchResultOut:
     hits, has_more = await EntityRepository(session).search(
-        q, entity_type=type, status=status, limit=limit, offset=offset, fuzzy=fuzzy
+        q,
+        entity_type=type,
+        status=status,
+        voivodeship=voivodeship,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        fuzzy=fuzzy,
     )
     return SearchResultOut(
         query=q,

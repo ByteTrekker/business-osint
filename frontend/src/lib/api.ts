@@ -143,10 +143,15 @@ export type CoLocated = {
 };
 
 export const api = {
-  search: (q: string, { fuzzy = false, offset = 0, status = "" } = {}) =>
+  search: (
+    q: string,
+    { fuzzy = false, offset = 0, status = "", voivodeship = "", sort = "" } = {},
+  ) =>
     get<{ query: string; hits: SearchHit[]; meta: PageMeta }>(
       `/search?q=${encodeURIComponent(q)}&limit=${SEARCH_PAGE_SIZE}&offset=${offset}` +
         (status ? `&status=${encodeURIComponent(status)}` : "") +
+        (voivodeship ? `&voivodeship=${encodeURIComponent(voivodeship)}` : "") +
+        (sort ? `&sort=${encodeURIComponent(sort)}` : "") +
         (fuzzy ? "&fuzzy=true" : ""),
     ),
   entity: (id: string) => get<EntityProfile>(`/entities/${id}`),
@@ -230,5 +235,30 @@ export async function fetchMapClusters(
 export async function fetchMapCoverage(): Promise<MapCoverage> {
   const response = await fetch(`${API_URL}/map/coverage`);
   if (!response.ok) throw new Error(`Pokrycie mapy: HTTP ${response.status}`);
+  return response.json();
+}
+
+export interface SourceInfo {
+  kind: string;
+  name: string;
+  what: string;
+  caveat: string | null;
+  documents: number;
+  relationships: number;
+  last_fetch: string | null;
+}
+
+export interface PlannedSource {
+  name: string;
+  what: string;
+  blocker: string | null;
+}
+
+export async function fetchSources(): Promise<{
+  active: SourceInfo[];
+  planned: PlannedSource[];
+}> {
+  const response = await fetch(`${API_URL}/sources`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Źródła: HTTP ${response.status}`);
   return response.json();
 }

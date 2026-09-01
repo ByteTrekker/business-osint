@@ -28,6 +28,15 @@ from business_osint.etl.sources.mf_whitelist import (
     extract_identifier_bridges,
 )
 
+#: Po tylu nieudanych partiach z rzędu przerywamy przebieg.
+#:
+#: Pierwszy pełny przebieg „zakończył się powodzeniem" z wynikiem
+#: `errors: 118501`: po wyczerpaniu dziennego limitu MF (`WL-191`) pętla
+#: przemieliła wszystkie pozostałe partie, nie robiąc nic, i zameldowała
+#: sukces. Źródło, które przestało odpowiadać, ma zatrzymać przebieg — inaczej
+#: licznik błędów jest szumem, a nie sygnałem.
+MAX_KOLEJNYCH_BLEDOW = 20
+
 
 @dataclass(slots=True)
 class WhitelistStats:
@@ -38,6 +47,8 @@ class WhitelistStats:
     vat_active: int = 0
     not_found: int = 0
     errors: int = 0
+    #: Wypełniane, gdy przebieg przerwano — puste znaczy „doszedł do końca".
+    aborted: str = ""
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -47,6 +58,7 @@ class WhitelistStats:
             "vat_active": self.vat_active,
             "not_found": self.not_found,
             "errors": self.errors,
+            "aborted": self.aborted,  # type: ignore[dict-item]
         }
 
 
@@ -86,14 +98,20 @@ async def enrich_identifiers(
 
     client = WhitelistClient()
     nips = list(targets)
+    pod_rzad = 0
     try:
         for start in range(0, len(nips), MAX_NIPS_PER_REQUEST):
             batch = nips[start : start + MAX_NIPS_PER_REQUEST]
             try:
                 document = await client.fetch_batch(batch, date=date)
-            except FetchError:
+            except FetchError as blad:
                 stats.errors += 1
+                pod_rzad += 1
+                if pod_rzad >= MAX_KOLEJNYCH_BLEDOW:
+                    stats.aborted = f"{MAX_KOLEJNYCH_BLEDOW} nieudanych partii z rzędu: {blad}"
+                    break
                 continue
+            pod_rzad = 0
 
             stats.nips_checked += len(batch)
             stats.last_nip = batch[-1]

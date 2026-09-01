@@ -62,6 +62,20 @@ class SearchHit:
 # w kilku milisekundach.
 _CANDIDATE_POOL = 300
 
+#: Ile trafień bierzemy pod uwagę przy sortowaniu innym niż trafność.
+#:
+#: Wyszukiwarka jest etapowa i **nie zna** pełnego zbioru dopasowań — dla
+#: prefiksu „a" jest ich 830 tys. i policzenie ich oznaczałoby przejście przez
+#: wszystkie. Sortowanie może więc uporządkować tylko to, co etapy zdążyły
+#: znaleźć. Bierzemy stałą, większą pulę i sortujemy ją w całości, zamiast
+#: przestawiać wiersze na jednej stronie i udawać, że to sortowanie zbioru.
+#: Kontrakt API mówi to wprost.
+_SORT_POOL = 200
+
+#: Klucze sortowania. Trafność jest kolejnością naturalną etapów i nie ma
+#: własnego klucza — nie ruszamy wtedy wierszy w ogóle.
+SORT_KEYS = ("relevance", "degree", "name")
+
 _RELEVANCE = """
     0.40 * LEAST(length(:normalized)::float8
                  / GREATEST(length(e.normalized_name), 1), 1.0)
@@ -123,7 +137,14 @@ def _name_stage(condition: str, base: float, span: float) -> Any:
         -- Filtr statusu **po** złączeniu, bo status mieszka w `companies`.
         -- Wciągnięcie go do podzapytania oznaczałoby złączenie na całej puli
         -- kandydatów zamiast na wycinku, który i tak przechodzi przez ranking.
-        WHERE CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text)
+        -- Województwo trzymamy w `companies.attributes`, bo pochodzi z CEIDG
+        -- i nie ma go dla podmiotów z pozostałych źródeł. Filtr jest więc
+        -- **zawężający**: włączenie go usuwa z wyniku wszystko, o czym nie
+        -- wiemy, gdzie jest — i tak ma być, bo pytanie brzmiało „w tym
+        -- województwie", a nie „może w tym województwie".
+        WHERE (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
+          AND (CAST(:voivodeship AS text) IS NULL
+               OR c.attributes ->> 'wojewodztwo' = CAST(:voivodeship AS text))
         -- `e.id` na końcu nie jest ozdobnikiem: bez niego wiersze o równej
         -- trafności wracają w kolejności zależnej od planu, a wtedy przy
         -- stronicowaniu ten sam podmiot potrafi pojawić się dwa razy albo
@@ -181,6 +202,8 @@ _BY_TRIGRAM = text("""
       AND e.normalized_name % :normalized
       AND (CAST(:entity_type AS text) IS NULL OR e.entity_type = CAST(:entity_type AS text))
       AND (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
+      AND (CAST(:voivodeship AS text) IS NULL
+           OR c.attributes ->> 'wojewodztwo' = CAST(:voivodeship AS text))
     ORDER BY score DESC, e.degree DESC, e.id
     LIMIT :limit
 """)
@@ -204,6 +227,8 @@ class EntityRepository:
         *,
         entity_type: str | None = None,
         status: str | None = None,
+        voivodeship: str | None = None,
+        sort: str = "relevance",
         limit: int = 20,
         offset: int = 0,
         fuzzy: bool = False,
@@ -229,6 +254,11 @@ class EntityRepository:
         # Pobieramy o jeden więcej, niż zwrócimy: obecność tego wiersza jest
         # jedyną tanią odpowiedzią na pytanie „czy jest następna strona".
         needed = offset + limit + 1
+        # Sortowanie inne niż trafność wymaga zobaczenia większej puli, zanim
+        # cokolwiek uporządkujemy — inaczej „najwięcej powiązań" znaczyłoby
+        # tylko „najwięcej na tej stronie".
+        if sort != "relevance":
+            needed = max(needed, _SORT_POOL)
         cleaned = query.strip()
         if not cleaned:
             return [], False
@@ -257,6 +287,7 @@ class EntityRepository:
                 "prefix": f"{normalized}%",
                 "entity_type": entity_type,
                 "status": status,
+                "voivodeship": voivodeship,
                 # Pula kandydatów musi pomieścić stronę, do której schodzimy —
                 # inaczej przy większym przesunięciu ranking miałby z czego
                 # wybierać mniej, niż wynosi żądany wycinek.
@@ -274,7 +305,10 @@ class EntityRepository:
 
         # Nazwiska w CEIDG są zapisane wielkimi literami; szukamy ostatniego słowa,
         # bo użytkownik pisze „Jan Kowalski", a indeks stoi na samym nazwisku.
-        if len(rows) < needed and entity_type in (None, "person"):
+        # Przy filtrze województwa etap nazwiskowy odpada: encje osób nie mają
+        # województwa, więc każde jego trafienie zostałoby i tak odrzucone —
+        # a filtr jest zawężający, nie „może".
+        if len(rows) < needed and entity_type in (None, "person") and voivodeship is None:
             surname = cleaned.split()[-1].upper()
             if len(surname) > 2:
                 take(
@@ -295,10 +329,16 @@ class EntityRepository:
                         "normalized": normalized,
                         "entity_type": entity_type,
                         "status": status,
+                        "voivodeship": voivodeship,
                         "limit": needed,
                     },
                 )
             )
+
+        if sort == "degree":
+            rows.sort(key=lambda row: (-int(row["degree"] or 0), row["display_name"] or ""))
+        elif sort == "name":
+            rows.sort(key=lambda row: (row["display_name"] or "").lower())
 
         has_more = len(rows) > offset + limit
         page = rows[offset : offset + limit]
