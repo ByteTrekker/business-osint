@@ -167,6 +167,9 @@ export interface MapCluster {
   longitude: number;
   addresses: number;
   entities: number;
+  /** Wypełnione tylko na poziomie szczegółowym — patrz `cell_degrees: null`. */
+  address_id: string | null;
+  label: string | null;
 }
 
 export interface MapView {

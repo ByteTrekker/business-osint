@@ -534,3 +534,38 @@ h2 {
 .topbar__nav a {
   color: inherit;
 }
+
+/* Dymek na mapie. Leaflet rysuje go we własnym kontenerze poza drzewem
+   komponentu, więc stylujemy globalnie — inaczej nie ma jak go dosięgnąć. */
+.leaflet-popup-content {
+  margin: 0.7rem 0.9rem;
+  font-size: 0.86rem;
+}
+
+.leaflet-popup-content strong {
+  display: block;
+  margin-bottom: 0.45rem;
+}
+
+.leaflet-popup-content ul.dymek {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.leaflet-popup-content ul.dymek li {
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.leaflet-popup-content ul.dymek span {
+  display: block;
+  opacity: 0.7;
+  font-size: 0.78rem;
+}
+
+.leaflet-popup-content p {
+  margin: 0.5rem 0 0;
+}

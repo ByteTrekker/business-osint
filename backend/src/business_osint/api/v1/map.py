@@ -9,6 +9,7 @@ do każdego przesunięcia było najdroższą częścią odpowiedzi.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -28,6 +29,15 @@ MAX_ROZPIETOSC = 20.0
 class ClusterOut(BaseModel):
     latitude: float
     longitude: float
+    address_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Identyfikator adresu — wypełniony wyłącznie na poziomie "
+            "szczegółowym. Podaj go do `/entities/{id}/co-located`, żeby "
+            "dostać podmioty zarejestrowane pod tym adresem."
+        ),
+    )
+    label: str | None = Field(default=None, description="Adres, jeśli znacznik jest pojedynczy")
     addresses: int = Field(description="Ile adresów wpadło do tej komórki")
     entities: int = Field(
         description=(
@@ -88,6 +98,8 @@ async def get_clusters(
                 longitude=c.longitude,
                 addresses=c.addresses,
                 entities=c.entities,
+                address_id=c.address_id,
+                label=c.label,
             )
             for c in wycinek.clusters
         ],

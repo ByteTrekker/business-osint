@@ -111,6 +111,37 @@ async def test_detail_level_reads_addresses_live_instead_of_the_grid(db_session)
     assert [(s.addresses, s.entities) for s in wycinek.clusters] == [(1, 7)]
 
 
+async def test_detail_markers_carry_an_address_id_so_they_can_be_asked_about(db_session) -> None:
+    # Bez identyfikatora znacznik jest kropką bez tożsamości i kliknięcie nie ma
+    # o co zapytać. `co-located` przyjmuje id adresu, więc to jedyne, czego
+    # klientowi brakuje.
+    adres = await _adres(db_session, lat="52.2297", lon="21.0122", degree=4)
+
+    wycinek = await MapRepository(db_session).clusters(
+        south=52.22, north=52.24, west=21.00, east=21.02, zoom=SZCZEGOL_OD
+    )
+
+    assert [s.address_id for s in wycinek.clusters] == [adres]
+    assert wycinek.clusters[0].label is not None
+
+
+async def test_coarse_clusters_have_no_address_id_because_they_are_not_one_place(
+    db_session,
+) -> None:
+    # Skupisko obejmuje setki adresów. Podanie identyfikatora któregokolwiek
+    # z nich byłoby kłamstwem, a klient nie miałby jak tego wykryć.
+    await _adres(db_session, lat="52.1010", lon="21.0010")
+    await _adres(db_session, lat="52.2010", lon="21.1010")
+    await _przelicz(db_session)
+
+    wycinek = await MapRepository(db_session).clusters(
+        south=52.0, north=52.4, west=20.9, east=21.2, zoom=6
+    )
+
+    assert [s.address_id for s in wycinek.clusters] == [None]
+    assert [s.label for s in wycinek.clusters] == [None]
+
+
 async def test_addresses_outside_the_rectangle_are_not_counted(db_session) -> None:
     await _adres(db_session, lat="52.1010", lon="21.0010")
     await _adres(db_session, lat="50.0610", lon="19.9370")

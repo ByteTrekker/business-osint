@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Map as LeafletMap, CircleMarker } from "leaflet";
 
-import { fetchMapClusters, fetchMapCoverage, type MapCluster, type MapCoverage } from "@/lib/api";
+import {
+  api,
+  fetchMapClusters,
+  fetchMapCoverage,
+  type CoLocated,
+  type MapCluster,
+  type MapCoverage,
+} from "@/lib/api";
 
 /**
  * Mapa zbiorcza wszystkich adresów w bazie.
@@ -35,72 +42,14 @@ export function ClusterMap() {
   // Przy `await` tworzenie mapy dzieje się asynchronicznie, a sprzątanie
   // synchronicznie — przy podwójnym montowaniu (React StrictMode, Fast Refresh)
   // te dwa przebiegi się rozjeżdżają i na jednym kontenerze powstaje druga,
-  // osierocona instancja: nasłuchuje zdarzeń, dubluje żądania i przestaje
-  // reagować na kliknięcia. Ze stanem tworzenie jest synchroniczne i paruje
-  // się ze sprzątaniem jeden do jednego.
+  // osierocona instancja. Ze stanem tworzenie jest synchroniczne i paruje się
+  // ze sprzątaniem jeden do jednego.
   const [L, setL] = useState<typeof import("leaflet") | null>(null);
   const kontener = useRef<HTMLDivElement>(null);
-  const mapa = useRef<LeafletMap | null>(null);
-  const znaczniki = useRef<CircleMarker[]>([]);
-  const zadanie = useRef<AbortController | null>(null);
   const [pokrycie, setPokrycie] = useState<MapCoverage | null>(null);
   const [przyciete, setPrzyciete] = useState(false);
   const [blad, setBlad] = useState<string | null>(null);
   const [laduje, setLaduje] = useState(true);
-
-  const odswiez = useCallback(async (L: typeof import("leaflet")) => {
-    const instancja = mapa.current;
-    if (!instancja) return;
-
-    zadanie.current?.abort();
-    const kontroler = new AbortController();
-    zadanie.current = kontroler;
-    setLaduje(true);
-
-    const granice = instancja.getBounds();
-    const wycinek = {
-      south: Math.max(granice.getSouth(), OBSZAR_DANYCH.south),
-      north: Math.min(granice.getNorth(), OBSZAR_DANYCH.north),
-      west: Math.max(granice.getWest(), OBSZAR_DANYCH.west),
-      east: Math.min(granice.getEast(), OBSZAR_DANYCH.east),
-    };
-    // Widok całkowicie poza obszarem danych — nie ma o co pytać.
-    if (wycinek.north <= wycinek.south || wycinek.east <= wycinek.west) {
-      znaczniki.current.forEach((m) => m.remove());
-      znaczniki.current = [];
-      setLaduje(false);
-      return;
-    }
-
-    try {
-      const widok = await fetchMapClusters(wycinek, instancja.getZoom(), kontroler.signal);
-
-      const maks = Math.max(1, ...widok.clusters.map((c) => c.addresses));
-      const promienKomorki = maksymalnyPromien(instancja, widok.cell_degrees);
-
-      znaczniki.current.forEach((m) => m.remove());
-      znaczniki.current = widok.clusters.map((skupisko) =>
-        L.circleMarker([skupisko.latitude, skupisko.longitude], {
-          radius: promien(skupisko.addresses, maks, promienKomorki),
-          color: barwa(skupisko.addresses, maks),
-          weight: 1,
-          fillColor: barwa(skupisko.addresses, maks),
-          fillOpacity: 0.65,
-        })
-          .bindTooltip(opis(skupisko, widok.cell_degrees), { direction: "top" })
-          .addTo(instancja),
-      );
-      setPrzyciete(widok.truncated);
-      setBlad(null);
-    } catch (powod) {
-      // Przerwanie własnego żądania przy szybkim przesuwaniu widoku nie jest
-      // błędem — nie ma o czym informować użytkownika.
-      if (kontroler.signal.aborted) return;
-      setBlad(powod instanceof Error ? powod.message : "Nie udało się wczytać mapy");
-    } finally {
-      if (!kontroler.signal.aborted) setLaduje(false);
-    }
-  }, []);
 
   useEffect(() => {
     let zywy = true;
@@ -136,17 +85,105 @@ export function ClusterMap() {
       maxZoom: 19,
     }).addTo(instancja);
 
-    mapa.current = instancja;
-    instancja.on("moveend", () => void odswiez(L));
-    void odswiez(L);
+    // Stan mapy żyje **w domknięciu tego efektu**, nie w `useRef`.
+    //
+    // Wcześniej mapa siedziała w refie, a odświeżanie czytało `mapa.current`.
+    // Ref jest wspólny dla wszystkich przebiegów efektu, a sprzątanie ustawiało
+    // go na `null` — przy podwójnym montowaniu zerowanie po pierwszym przebiegu
+    // trafiało w mapę utworzoną przez drugi. Odświeżanie **cicho wychodziło**
+    // przez `if (!instancja) return`, więc mapa przestawała reagować na
+    // przesuwanie i na kliknięcia, nie zgłaszając żadnego błędu.
+    let znaczniki: CircleMarker[] = [];
+    let zadanie: AbortController | null = null;
+
+    const odswiez = async (): Promise<void> => {
+      zadanie?.abort();
+      const kontroler = new AbortController();
+      zadanie = kontroler;
+      setLaduje(true);
+
+      const granice = instancja.getBounds();
+      const wycinek = {
+        south: Math.max(granice.getSouth(), OBSZAR_DANYCH.south),
+        north: Math.min(granice.getNorth(), OBSZAR_DANYCH.north),
+        west: Math.max(granice.getWest(), OBSZAR_DANYCH.west),
+        east: Math.min(granice.getEast(), OBSZAR_DANYCH.east),
+      };
+      // Prostokąt pusty: albo widok jest poza obszarem danych, albo mapa nie
+      // zna jeszcze swojego rozmiaru i `getBounds()` zwraca punkt. Drugi
+      // przypadek naprawia `invalidateSize()` niżej — tutaj tylko nie pytamy
+      // o pustkę.
+      if (wycinek.north <= wycinek.south || wycinek.east <= wycinek.west) {
+        znaczniki.forEach((m) => m.remove());
+        znaczniki = [];
+        setLaduje(false);
+        return;
+      }
+
+      try {
+        const widok = await fetchMapClusters(wycinek, instancja.getZoom(), kontroler.signal);
+
+        // Na poziomie zgrubnym niesie informację liczba adresów, na
+        // szczegółowym zawsze równa jeden — tam liczy się, ile podmiotów siedzi
+        // pod tym jednym adresem. Skalowanie po `addresses` dawało na poziomie
+        // szczegółowym same jednakowe, czerwone kropki: maksimum równe jeden,
+        // więc każdy znacznik wychodził największy i najgorętszy.
+        const waga = (c: MapCluster) => (widok.cell_degrees === null ? c.entities : c.addresses);
+        const maks = Math.max(1, ...widok.clusters.map(waga));
+        const promienKomorki = maksymalnyPromien(instancja, widok.cell_degrees);
+
+        znaczniki.forEach((m) => m.remove());
+        znaczniki = widok.clusters.map((skupisko) =>
+          L.circleMarker([skupisko.latitude, skupisko.longitude], {
+            radius: promien(waga(skupisko), maks, promienKomorki),
+            color: barwa(waga(skupisko), maks),
+            weight: 1,
+            fillColor: barwa(waga(skupisko), maks),
+            fillOpacity: 0.65,
+          })
+            .bindTooltip(opis(skupisko, widok.cell_degrees), { direction: "top" })
+            .on("click", () => klikniecie(L, instancja, skupisko))
+            .addTo(instancja),
+        );
+        setPrzyciete(widok.truncated);
+        setBlad(null);
+      } catch (powod) {
+        // Przerwanie własnego żądania przy szybkim przesuwaniu widoku nie jest
+        // błędem — nie ma o czym informować użytkownika.
+        if (kontroler.signal.aborted) return;
+        setBlad(powod instanceof Error ? powod.message : "Nie udało się wczytać mapy");
+      } finally {
+        if (!kontroler.signal.aborted) setLaduje(false);
+      }
+    };
+
+    instancja.on("moveend", () => void odswiez());
+
+    // Leaflet mierzy kontener w momencie tworzenia mapy. Przy pierwszym
+    // renderowaniu wysokość z arkusza stylów bywa jeszcze nienałożona, więc
+    // mapa zapamiętuje rozmiar bliski zeru: `getBounds()` zwraca wtedy niemal
+    // punkt, prostokąt widoku wychodzi pusty i **nic się nie dzieje** — bez
+    // żądania, bez znaczników i bez błędu. Widać tylko wąski pasek kafli.
+    //
+    // `ResizeObserver` zamiast jednorazowego `invalidateSize()`, bo ten sam
+    // problem wraca przy każdej zmianie rozmiaru okna, której dotąd nie
+    // obsługiwaliśmy wcale.
+    const obserwator = new ResizeObserver(() => {
+      instancja.invalidateSize();
+    });
+    obserwator.observe(instancja.getContainer());
+
+    // `resize` leci z `invalidateSize()`; `moveend` nie zawsze, bo środek mapy
+    // się nie zmienia — a prostokąt widoku owszem.
+    instancja.on("resize", () => void odswiez());
+    void odswiez();
 
     return () => {
-      zadanie.current?.abort();
+      obserwator.disconnect();
+      zadanie?.abort();
       instancja.remove();
-      mapa.current = null;
-      znaczniki.current = [];
     };
-  }, [L, odswiez]);
+  }, [L]);
 
   return (
     <div>
@@ -182,6 +219,77 @@ function Pokrycie({ dane }: { dane: MapCoverage }) {
 }
 
 /**
+ * Kliknięcie w znacznik.
+ *
+ * Na poziomie zgrubnym skupisko obejmuje setki adresów i lista podmiotów nie
+ * miałaby sensu — przybliżamy, czyli robimy to, po co użytkownik kliknął.
+ * Dopiero pojedynczy adres ma o czym opowiadać.
+ */
+function klikniecie(L: typeof import("leaflet"), mapa: LeafletMap, skupisko: MapCluster): void {
+  if (!skupisko.address_id) {
+    mapa.flyTo([skupisko.latitude, skupisko.longitude], Math.min(mapa.getZoom() + 3, 17));
+    return;
+  }
+
+  const dymek = L.popup({ maxWidth: 340, maxHeight: 320 })
+    .setLatLng([skupisko.latitude, skupisko.longitude])
+    .setContent(`<strong>${escapuj(skupisko.label ?? "Adres")}</strong><p>Wczytywanie…</p>`)
+    .openOn(mapa);
+
+  void api
+    .coLocated(skupisko.address_id)
+    .then((odpowiedz) => {
+      dymek.setContent(trescDymka(skupisko, odpowiedz.items, odpowiedz.meta.total));
+    })
+    .catch(() => {
+      dymek.setContent(
+        `<strong>${escapuj(skupisko.label ?? "Adres")}</strong>` +
+          `<p>Nie udało się wczytać podmiotów pod tym adresem.</p>`,
+      );
+    });
+}
+
+function trescDymka(skupisko: MapCluster, podmioty: CoLocated[], razem: number | null): string {
+  const naglowek = `<strong>${escapuj(skupisko.label ?? "Adres")}</strong>`;
+  if (podmioty.length === 0) {
+    // Adres bez podmiotów istnieje: mógł zostać dodany przez scalanie albo
+    // wszystkie wpisy pod nim zostały wykreślone.
+    return `${naglowek}<p>Brak podmiotów zarejestrowanych pod tym adresem.</p>`;
+  }
+
+  const wiersze = podmioty
+    .map((p) => {
+      const opisy = [p.nip ? `NIP ${p.nip}` : null, p.krs ? `KRS ${p.krs}` : null, p.status]
+        .filter(Boolean)
+        .join(" · ");
+      return (
+        `<li><a href="/entity/${p.id}">${escapuj(p.name)}</a>` +
+        (opisy ? `<span>${escapuj(opisy)}</span>` : "") +
+        `</li>`
+      );
+    })
+    .join("");
+
+  const brakuje = razem !== null && razem > podmioty.length ? razem - podmioty.length : 0;
+  const stopka = brakuje
+    ? `<p><a href="/entity/${skupisko.address_id}">Pokaż wszystkie ${razem}</a></p>`
+    : "";
+  return `${naglowek}<ul class="dymek">${wiersze}</ul>${stopka}`;
+}
+
+/**
+ * Treść dymka składamy z napisów, więc nazwa podmiotu z bazy trafia do HTML-a.
+ * Nazwy firm bywają dowolnym tekstem z rejestru i nie są przez nikogo
+ * sanityzowane — bez tego jedna nazwa z nawiasem kątowym psuje dymek, a w gorszym
+ * przypadku wstrzykuje znacznik.
+ */
+function escapuj(tekst: string): string {
+  const element = document.createElement("div");
+  element.textContent = tekst;
+  return element.innerHTML;
+}
+
+/**
  * Największy dopuszczalny promień: połowa boku komórki **w pikselach**.
  *
  * Promień w wartościach bezwzględnych nie działa, bo ten sam licznik oznacza
@@ -198,17 +306,17 @@ function maksymalnyPromien(mapa: LeafletMap, bok: number | null): number {
   return Math.max(2.5, Math.min((b.x - a.x) / 2, 26));
 }
 
-/** Pole koła odpowiada liczbie adresów, więc promień idzie z pierwiastka. */
-function promien(adresow: number, maks: number, maksymalny: number): number {
-  return Math.max(1.5, maksymalny * Math.sqrt(adresow / maks));
+/** Pole koła odpowiada liczbie, więc promień idzie z pierwiastka. */
+function promien(ile: number, maks: number, maksymalny: number): number {
+  return Math.max(1.5, maksymalny * Math.sqrt(ile / maks));
 }
 
 /**
  * Barwa niesie tę samą informację co promień, ale czytelną przy najmniejszych
  * komórkach — te mają dwa piksele i różnicy wielkości na nich nie widać.
  */
-function barwa(adresow: number, maks: number): string {
-  const udzial = Math.sqrt(adresow / maks);
+function barwa(ile: number, maks: number): string {
+  const udzial = Math.sqrt(ile / maks);
   if (udzial > 0.6) return "#b91c1c";
   if (udzial > 0.35) return "#ea580c";
   if (udzial > 0.15) return "#ca8a04";

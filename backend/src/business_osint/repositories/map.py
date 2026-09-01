@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,11 @@ class Skupisko:
     longitude: float
     addresses: int
     entities: int
+    #: Wypełniane wyłącznie na poziomie szczegółowym, gdzie znacznik jest
+    #: pojedynczym adresem i da się o niego dopytać. Na poziomie zgrubnym
+    #: skupisko obejmuje setki adresów i żaden identyfikator nie byłby prawdziwy.
+    address_id: uuid.UUID | None = None
+    label: str | None = None
 
 
 @dataclass(slots=True)
@@ -69,8 +75,14 @@ _SKUPISKA = text("""
     LIMIT :limit
 """)
 
+# Poziom szczegółowy zwraca **identyfikator adresu**, bo dopiero tu znacznik
+# odpowiada jednemu bytowi, o który da się dopytać. Klient używa go potem do
+# `/entities/{id}/co-located` — nie dublujemy tu listy podmiotów, bo pod jednym
+# adresem potrafi ich siedzieć 456 i ładowanie ich dla każdego widocznego
+# znacznika byłoby setkami wierszy na zapas.
 _PUNKTY = text("""
-    SELECT a.latitude AS la, a.longitude AS lo, 1 AS adresow, e.degree AS podmiotow
+    SELECT a.entity_id AS id, e.display_name AS etykieta,
+           a.latitude AS la, a.longitude AS lo, 1 AS adresow, e.degree AS podmiotow
     FROM addresses a
     JOIN entities e ON e.id = a.entity_id AND e.merged_into_id IS NULL
     WHERE a.latitude IS NOT NULL
@@ -164,11 +176,14 @@ class MapRepository:
 
     @staticmethod
     def _skupisko(row: Any) -> Skupisko:
+        identyfikator = row.get("id")
         return Skupisko(
             latitude=float(row["la"]),
             longitude=float(row["lo"]),
             addresses=int(row["adresow"]),
             entities=int(row["podmiotow"]),
+            address_id=identyfikator if isinstance(identyfikator, uuid.UUID) else None,
+            label=row.get("etykieta"),
         )
 
     async def coverage(self) -> Pokrycie:
