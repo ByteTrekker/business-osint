@@ -89,6 +89,9 @@ frontend/src/               Next.js App Router + Cytoscape.js
 docs/adr/                   decyzje architektoniczne z warunkami rewizji
 ```
 
+Wprowadzenie do kodu dla kogoś, kto go nie zna:
+[docs/11-przewodnik-po-kodzie.md](docs/11-przewodnik-po-kodzie.md).
+
 Nowy kod trafia do warstwy zgodnej z jego zależnościami. Jeżeli funkcja
 potrzebuje bazy, nie należy do `domain/`.
 
