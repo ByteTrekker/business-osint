@@ -33,12 +33,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from business_osint.config import get_settings
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import Confidence, EntityType, RelationshipType, SourceKind
+from business_osint.etl.fetching.errors import FetchError
 from business_osint.etl.loaders import store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
 from business_osint.etl.sources.ceidg_reports import CeidgEntryClient, spolki_z_wpisu
 
 #: Po tylu nieudanych wpisach z rzędu przerywamy przebieg — źródło, które
 #: przestało odpowiadać, ma zatrzymać pracę, a nie mielić ją bez efektu.
+#: Zadziałało już raz: przy `429` z CEIDG przerwało po 20 zamiast po 96 tysiącach.
 MAX_KOLEJNYCH_BLEDOW = 20
 
 
@@ -151,7 +153,7 @@ async def import_partnerships(
         for cel in cele:
             try:
                 firma = await client.fetch(cel.nip)
-            except Exception as blad:
+            except FetchError as blad:
                 stats.errors += 1
                 pod_rzad += 1
                 if pod_rzad >= MAX_KOLEJNYCH_BLEDOW:

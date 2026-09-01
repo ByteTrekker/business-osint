@@ -23,6 +23,11 @@ from typing import Any
 
 import httpx
 
+from business_osint.domain.enums import SourceKind
+from business_osint.etl.fetching.client import ResilientClient
+from business_osint.etl.fetching.profiles import PROFILES
+from business_osint.etl.fetching.rate_limit import RateLimiter
+
 BASE_URL = "https://dane.biznes.gov.pl/api/ceidg/v3"
 
 #: Nazwa raportu, który zawiera zarejestrowane działalności (a nie wnioski).
@@ -116,26 +121,40 @@ class CeidgEntryClient:
     identyfikuje spółki**: `StatusDzialalnosci` mówi tylko, że ktoś działa
     wyłącznie w tej formie, nie mówi z kim. Bez tego punktu nie da się
     zbudować krawędzi między wspólnikami.
+
+    Idzie przez `ResilientClient`, a nie przez gołego `httpx`. Pierwsza wersja
+    tego klienta miała własne połączenie bez limitu tempa i bez obsługi
+    `Retry-After` — dostała `429` po 930 zapytaniach i zatrzymała przebieg.
+    Rejestr podaje swój limit w nagłówkach `x-rate-limit-*`: **1000 zapytań
+    na 60 minut**.
     """
 
-    def __init__(self, token: str, client: httpx.AsyncClient | None = None) -> None:
-        self._client = client or httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=10.0),
-            headers={
-                "Authorization": f"Bearer {token.strip()}",
-                "Accept": "application/json",
-                "User-Agent": USER_AGENT,
-            },
-            follow_redirects=True,
+    def __init__(self, token: str, client: ResilientClient | None = None) -> None:
+        self._client = client or self._domyslny(token)
+
+    @staticmethod
+    def _domyslny(token: str) -> ResilientClient:
+        return ResilientClient(
+            source=SourceKind.CEIDG.value,
+            client=httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                headers={
+                    "Authorization": f"Bearer {token.strip()}",
+                    "Accept": "application/json",
+                    "User-Agent": USER_AGENT,
+                },
+                follow_redirects=True,
+            ),
+            rate_limiter=RateLimiter(PROFILES[SourceKind.CEIDG].rate_per_second),
+            retry_policy=PROFILES[SourceKind.CEIDG].retry,
         )
 
     async def fetch(self, nip: str) -> dict[str, Any] | None:
         """Wpis dla numeru NIP albo ``None``, gdy rejestr go nie zna."""
-        response = await self._client.get(FIRMA_URL, params={"nip": nip})
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        firma = response.json().get("firma")
+        document = await self._client.get_json(
+            FIRMA_URL, external_id=f"ceidg/firma/{nip}", params={"nip": nip}
+        )
+        firma = document.payload.get("firma")
         if isinstance(firma, list):
             return firma[0] if firma else None
         return firma if isinstance(firma, dict) else None

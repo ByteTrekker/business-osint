@@ -95,12 +95,21 @@ PROFILES: dict[SourceKind, SourceProfile] = {
         name="CEIDG API",
         access=AccessMode.SEARCH_API,
         incremental=IncrementalMode.DATE_RANGE,
-        rate_per_second=5.0,
-        concurrency=5,
+        # Zmierzone z nagłówków odpowiedzi 2026-09-01: `x-rate-limit-limit: 1000`
+        # na 60 minut, czyli 0,28 zapytania na sekundę. Wcześniejsze 5,0 było
+        # zgadywane — przy nim przebieg po pojedynczych wpisach dostał 429 po
+        # 930 zapytaniach. Rejestr **publikuje** swój limit, wbrew założeniu
+        # z nagłówka tego pliku; trzeba było przeczytać nagłówki, nie zgadywać.
+        rate_per_second=1000 / 3600,
+        concurrency=1,
         retry=_CAREFUL,
         estimated_objects=2_500_000,
         estimated_size_mb=2_000,
-        notes="Wymaga tokenu. Filtr po dacie zmiany czyni przebieg przyrostowym.",
+        notes=(
+            "Wymaga tokenu. Limit 1000 zapytań/60 min podany w nagłówkach "
+            "`x-rate-limit-*`. Raport zbiorczy jest tani, ale pole `spolki` "
+            "jest wyłącznie w pojedynczym wpisie `/firma`."
+        ),
     ),
     SourceKind.CRBR: SourceProfile(
         kind=SourceKind.CRBR,
