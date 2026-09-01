@@ -5,7 +5,7 @@ tej aplikacji. Nie opisuje każdej linii — opisuje **co robi każda część i
 dlaczego akurat tak**. Przy okazji tłumaczy konstrukcje Pythona, które w tym
 kodzie występują często i mogą być niejasne.
 
-Stan na dzień pisania: 11 068 linii Pythona, około 9,57 mln encji
+Stan na dzień pisania: około 11 tys. linii Pythona, około 9,57 mln encji
 i 6,47 mln krawędzi w grafie.
 
 ---
@@ -72,7 +72,7 @@ def normalize_company_name(name: str) -> str:
 
 Funkcje tutaj mają wspólną cechę: **dla tego samego wejścia zawsze zwracają to
 samo i nie dotykają niczego na zewnątrz**. Dzięki temu da się je testować
-bez żadnej infrastruktury, a testy mutacyjne (patrz §10) mogą sprawdzić, czy
+bez żadnej infrastruktury, a testy mutacyjne (patrz rozdział 12) mogą sprawdzić, czy
 testy naprawdę pilnują reguły.
 
 Przykład z tego pliku, pokazujący pewną pułapkę:
@@ -147,9 +147,51 @@ atrybut.
 nie da się zmienić po utworzeniu. Przydatne wszędzie tam, gdzie coś ma być
 faktem, a nie zmienną.
 
-### Pozostałe
+### `identity.py` — kiedy dwa rekordy to ta sama osoba
 
-* `identity.py` — kiedy dwa rekordy to ta sama osoba/firma (entity resolution).
+To miejsce, w którym mieszka niezmiennik N4. Kod jest prosty, ale decyzja
+za nim — nie:
+
+```python
+def score_person_pair(features: CandidateFeatures) -> MatchResult:
+    """Sama zgodność imienia i nazwiska NIGDY nie daje automatycznego MATCH —
+    w Polsce jest ok. 100 tys. osób o nazwisku Nowak."""
+    score = features.name_similarity * 0.7
+    reasons = [f"name_similarity={features.name_similarity:.2f}"]
+    if features.same_birth_year:
+        score += 0.15
+        reasons.append("same_birth_year")
+    if features.same_address:
+        score += 0.10
+        reasons.append("same_address")
+    if features.shared_company_count:
+        score += min(0.10, 0.05 * features.shared_company_count)
+        reasons.append(f"shared_companies={features.shared_company_count}")
+    return _decide(min(score, 1.0), tuple(reasons))
+```
+
+**Arytmetyka jest tu celowa.** Nazwisko waży 0,7 — czyli samo nigdy nie
+przekroczy progu scalenia. Potrzebny jest **drugi, niezależny sygnał**.
+
+**`f"name_similarity={x:.2f}"`** to *f-string*: napis, w którym `{...}`
+podstawia wartość. `:.2f` formatuje liczbę do dwóch miejsc po przecinku.
+Wynik trafia do listy `reasons`, więc każda decyzja **niesie uzasadnienie** —
+przy przeglądzie ręcznym widać, dlaczego system tak uznał.
+
+**`min(0.10, 0.05 * n)`** to sufit: dziesięć wspólnych spółek nie waży
+dwa razy tyle co pięć. Bez tego jeden bardzo aktywny wspólnik przeważyłby
+wszystko inne.
+
+Funkcja zwraca jedną z trzech decyzji: `MATCH`, `REVIEW`, `NO_MATCH`.
+Środkowa jest najważniejsza — to kolejka do obejrzenia przez człowieka,
+zamiast zgadywania w jedną albo drugą stronę.
+
+### Pozostałe moduły tej warstwy
+
+* `graph_shape.py` — zwijanie węzłów, które powtarzają informację (np. osoba
+  o tej samej nazwie co jej własna jednoosobowa działalność).
+* `map_grid.py` — arytmetyka siatki mapy (patrz rozdział 7).
+* `registry_values.py` — słowniki wartości z rejestrów: formy prawne, statusy.
 * `graph_shape.py` — zwijanie węzłów, które powtarzają informację.
 * `map_grid.py` — arytmetyka siatki mapy (patrz §7).
 * `registry_values.py` — słowniki wartości z rejestrów.
@@ -252,6 +294,44 @@ nie ma sensu poza tym jednym miejscem. Nazywa się to *domknięcie* (closure).
 
 `set` (`seen`) to zbiór — sprawdzenie „czy już jest" kosztuje tyle samo przy
 dziesięciu i przy milionie elementów, w odróżnieniu od listy.
+
+### `graph.py` — przechodzenie po grafie wszerz
+
+Klasyczny BFS (przeszukiwanie wszerz), ale z budżetem:
+
+```python
+frontier = [root_id]
+seen_edges: set[uuid.UUID] = set()
+
+for level in range(1, depth + 1):
+    if not frontier or state.remaining_nodes <= 0:
+        break
+    rows = (await self._session.execute(_LEVEL_SQL, {
+        "frontier": frontier,
+        "fanout": budget.fanout_per_node,
+        ...
+    })).mappings().all()
+
+    next_frontier: list[uuid.UUID] = []
+    for row in rows:
+        if row["matched_degree"] > budget.fanout_per_node:
+            state.truncated = True
+        ...
+```
+
+**„Frontier" to bieżący poziom** — zbiór wierzchołków, których sąsiadów
+szukamy w tej rundzie. Jedno zapytanie na poziom, nie jedno na wierzchołek:
+`WHERE e.from_id = ANY(:frontier)` bierze całą listę naraz. To jest właśnie
+ta różnica, dla której odczyt grafu idzie surowym SQL-em, a nie ORM-em —
+przez ORM byłoby to setki zapytań zamiast dwóch.
+
+**`state.truncated = True`** realizuje niezmiennik N3: gdy węzeł ma więcej
+sąsiadów, niż wolno pokazać, odpowiedź **mówi o tym wprost**. Wynik, który
+wygląda na kompletny, a nie jest, jest gorszy niż błąd.
+
+`for level in range(1, depth + 1)` — `range(a, b)` w Pythonie obejmuje `a`,
+ale **nie** `b`. Stąd `depth + 1`, żeby ostatni poziom też się wykonał.
+To jedna z częstszych pomyłek o jeden przy przejściu z innego języka.
 
 ---
 
@@ -413,6 +493,68 @@ przemielił **118 501 partii nie robiąc nic** i zameldował sukces, bo pętla
 łapała błąd i szła dalej. Teraz źródło, które przestało odpowiadać, zatrzymuje
 przebieg — licznik błędów, na który nikt nie reaguje, jest szumem.
 
+
+### Kolejka zadań w Postgresie, bez Rabbita
+
+`etl/task_queue.py` — kilku pracowników ma brać **rozłączne** zadania i nie
+deptać sobie po palcach. Zwykle sięga się po kolejkę wiadomości; tutaj wystarcza
+jedna sztuczka SQL-a:
+
+```sql
+WITH claimed AS (
+    SELECT id FROM ingestion_tasks
+    WHERE source_id = :source_id
+      AND status = 'pending'
+      AND scheduled_for <= now()
+    ORDER BY priority DESC, scheduled_for
+    LIMIT :batch_size
+    FOR UPDATE SKIP LOCKED      -- ← tu jest cała sztuczka
+)
+UPDATE ingestion_tasks t
+SET status = 'running', locked_at = now(), locked_by = :worker,
+    attempts = t.attempts + 1
+FROM claimed WHERE t.id = claimed.id
+RETURNING t.id, t.external_id, t.task_type, t.attempts
+```
+
+**`FOR UPDATE SKIP LOCKED`** znaczy: „zablokuj te wiersze dla mnie, a te, które
+ktoś już zablokował — **pomiń, nie czekaj**". Bez `SKIP LOCKED` drugi pracownik
+stałby w kolejce po ten sam wiersz. Z nim po prostu bierze następne wolne.
+
+Kilka rzeczy w tym zapytaniu jest celowych:
+
+* **`WITH ... AS (...)`** to CTE — nazwane podzapytanie. Tutaj najpierw
+  *wybieramy i blokujemy*, potem *aktualizujemy*, w jednej niepodzielnej operacji.
+* **`RETURNING`** oddaje zaktualizowane wiersze od razu. Bez tego trzeba by
+  zrobić `UPDATE`, a potem osobny `SELECT` — i między nimi ktoś mógłby coś zmienić.
+* **`attempts = t.attempts + 1`** — licznik prób rośnie przy pobraniu, nie przy
+  porażce. Zadanie, które wywala workera w połowie, też się liczy; inaczej
+  zapętliłoby się w nieskończoność.
+
+### `quality.py` — asercje na prawdziwych danych
+
+Testy sprawdzają kod. To sprawdza **dane** — po każdym imporcie:
+
+```python
+@dataclass(frozen=True, slots=True)
+class Check:
+    """Pojedyncza asercja: nazwa, uzasadnienie i zapytanie liczące naruszenia.
+
+    ``threshold`` to liczba naruszeń, którą jeszcze uznajemy za stan normalny.
+    Domyślnie zero. Wartość wyższa wymaga komentarza mówiącego, dlaczego dane
+    naruszenie jest dopuszczalne — inaczej próg cicho zamienia awarię w tło.
+    """
+```
+
+Siedem takich kontroli chodzi po każdym imporcie i po każdym przebiegu bramek.
+Przykłady: „każda krawędź ma pochodzenie" (N2), „jeden wiersz adresu na jeden
+fizyczny adres" (N4), „scalona encja nie ma aktywnych krawędzi" (N1).
+
+Zdanie o `threshold` w docstringu jest ważniejsze, niż wygląda. Próg różny od
+zera to **udokumentowany dług**, nie wyłączona kontrola. Dziś jeden z nich
+wynosi 733 — tyle krawędzi z jednego starego importu nie ma zapisanego
+pochodzenia i wiemy o tym, zamiast udawać, że kontrola przechodzi.
+
 ### Wznawianie
 
 Pełny przebieg po CEIDG to 96 455 zapytań i kilka dób. Każde przerwanie nie może
@@ -439,9 +581,89 @@ przetworzony numer**, a przy odpowiedziach kończących się poza kolejnością
 Efekt: przebieg sekwencyjny wykorzystywał 453 zapytania na godzinę
 z dozwolonych 900 — resztę zjadało czekanie na sieć. Po zmianie: 796.
 
+
 ---
 
-## 9. Cztery niezmienniki — reguły, których nie wolno złamać
+## 9. Migracje — jak zmienia się schemat bazy
+
+Tabel nie tworzy się ręcznie w psql. Każda zmiana schematu to plik w
+`alembic/versions/`, ponumerowany i zawierający **obie strony**:
+
+```python
+def upgrade() -> None:
+    op.add_column("addresses", sa.Column("simc", sa.String(length=16), nullable=True))
+    op.add_column("addresses", sa.Column("ulic", sa.String(length=16), nullable=True))
+    # Po SIMC szukamy „kto jeszcze jest w tej miejscowości" — to jest pytanie
+    # o tej samej naturze co dzisiejsze „kto jeszcze jest pod tym adresem".
+    op.create_index("ix_addresses_simc", "addresses", ["simc"])
+
+
+def downgrade() -> None:
+    op.drop_index("ix_addresses_simc", table_name="addresses")
+    op.drop_column("addresses", "ulic")
+    op.drop_column("addresses", "simc")
+```
+
+`downgrade()` musi cofać dokładnie to, co zrobił `upgrade()`, w odwrotnej
+kolejności. Bez tego nie da się wycofać nieudanego wdrożenia.
+
+Migrację można wygenerować (`alembic revision --autogenerate`), ale **trzeba ją
+potem przeczytać**: autogenerator nie wykrywa indeksów częściowych, klauzuli
+`INCLUDE` ani widoków. `alembic check` jest bramką w CI i porównuje modele
+z migracjami — nowy indeks dopisany tylko w migracji, bez `__table_args__`
+w modelu, wywali build.
+
+Docstring migracji to nie ozdobnik. W tym projekcie opisuje **dlaczego** zmiana
+zaszła — np. migracja 0011 tłumaczy, dlaczego siatka mapy jest przeliczana,
+a nie liczona w locie, wraz z liczbami z planu zapytania.
+
+---
+
+## 10. CLI — jak się to uruchamia
+
+Wszystkie importy i zadania utrzymaniowe chodzą przez jedną komendę
+(`business_osint.cli`), zbudowaną na Typerze:
+
+```python
+@app.command("refresh-degrees")
+def refresh_degrees() -> None:
+    """Przelicza zdenormalizowany stopień węzłów (entities.degree)."""
+    from business_osint.etl.maintenance import recompute_degrees
+
+    def show(done: int) -> None:
+        typer.echo(f"  zaktualizowano: {done:,}\r", nl=False)
+
+    count = asyncio.run(recompute_degrees(progress=show))
+    typer.echo(f"Zaktualizowano {count} encji.")
+```
+
+**Typer** buduje interfejs wiersza poleceń z sygnatury funkcji: nazwy
+argumentów stają się flagami, adnotacje typów — walidacją, a docstring trafia
+do `--help`. Nie parsuje się `sys.argv` ręcznie.
+
+**Import wewnątrz funkcji**, a nie na górze pliku, jest tu celowy: `cli.py`
+ma kilkanaście komend, a każda ciągnie inne zależności. Import na górze
+oznaczałby, że `--help` ładuje cały ETL. Tak ładuje się tylko to, co potrzebne
+dla wywołanej komendy.
+
+**`asyncio.run(...)`** to most między światem synchronicznym (funkcja Typera)
+a asynchronicznym (cały ETL). Uruchamia pętlę zdarzeń, wykonuje korutynę
+i zamyka pętlę. **Drugie wywołanie w tej samej komendzie to pułapka**: dostanie
+połączenia przypięte do zamkniętej pętli. Jeżeli po imporcie ma się wykonać
+coś jeszcze, musi być w **tej samej** korutynie.
+
+**`progress=show`** — przekazanie funkcji jako argumentu. W Pythonie funkcja
+jest zwykłą wartością; `show` bez nawiasów to sama funkcja, `show()` to jej
+wywołanie. Dzięki temu warstwa ETL nie wie nic o wypisywaniu na ekran —
+dostaje coś, co ma wołać, i tyle. W testach podaje się tam co innego albo nic.
+
+`f"{done:,}"` wstawia separatory tysięcy: `1234567` → `1,234,567`.
+`\r` (powrót karetki) bez `\n` nadpisuje tę samą linię, więc licznik się
+odświeża zamiast przewijać ekran.
+
+---
+
+## 11. Cztery niezmienniki — reguły, których nie wolno złamać
 
 Zapisane w `CLAUDE.md`, każdy ma testy. Naruszenie to defekt krytyczny, nie
 zwykły błąd.
@@ -460,7 +682,7 @@ się nie dowie.
 
 ---
 
-## 10. Testy — trzy poziomy
+## 12. Testy — trzy poziomy
 
 ```
 tests/unit/          bez bazy, ~0,2 s, muszą działać wszędzie
@@ -471,6 +693,24 @@ tests/integration/   z Postgresem, oznaczone @pytest.mark.integration
 **Test nazywa regułę, nie metodę.** Nie `test_score_person_pair`, tylko
 `test_identical_names_alone_never_auto_merge_people`. Z nazwy ma być widać,
 co przestanie być prawdą, gdy test spadnie.
+
+Docstring pliku testowego mówi, **czego pilnujemy i co by się stało bez tego**:
+
+```python
+"""Mapa zbiorcza: zwijanie przeliczonej siatki.
+
+Reguła, której pilnujemy: zwinięcie siatki bazowej daje ten sam wynik co
+policzenie od zera. Gdyby się rozjechało, mapa nadal by działała i nadal by
+coś rysowała — tylko liczby przestałyby się zgadzać, a przy zmianie
+przybliżenia skupiska przeskakiwałyby o kawałek. Żaden z tych objawów nie
+zatrzymuje aplikacji, więc bez testu nikt by tego nie zauważył.
+"""
+```
+
+To jest kryterium, według którego warto pisać testy w tym projekcie:
+**czy błąd byłby cichy**. Rzeczy, które wywalają aplikację, zgłoszą się same.
+Rzeczy, po których aplikacja dalej działa, tylko liczby przestają się zgadzać —
+nie zgłoszą się nigdy.
 
 ### Testy mutacyjne — po co, skoro są zwykłe
 
@@ -492,7 +732,7 @@ uproszczenie, nie dopisanie asercji.
 
 ---
 
-## 11. Pułapki, które już raz kosztowały debugowanie
+## 13. Pułapki, które już raz kosztowały debugowanie
 
 Warte przeczytania przed pierwszą zmianą — wszystkie przeszły przez lokalne
 testy i wywróciły się później.
@@ -522,7 +762,7 @@ zamkniętej pętli zdarzeń.
 
 ---
 
-## 12. Frontend w skrócie
+## 14. Frontend w skrócie
 
 Next.js (App Router) + React. Trzy strony: wyszukiwarka, mapa, profil podmiotu.
 Graf rysuje Cytoscape.js, mapę — Leaflet.
@@ -539,7 +779,7 @@ poprawne wymiary, po prostu nic nie widać. Lekarstwo w obu przypadkach to
 
 ---
 
-## 13. Od czego zacząć czytanie
+## 15. Od czego zacząć czytanie
 
 Proponowana kolejność, gdyby ktoś chciał wejść w kod:
 
