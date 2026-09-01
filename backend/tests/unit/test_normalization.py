@@ -639,6 +639,8 @@ class TestNazwaSpolkiCywilnej:
 
         # Granica jest przy dwóch znakach: „AB" to nazwa, „X" to resztka.
         assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej AB") == "AB"
+
+
 def test_pesel_is_hashed_before_a_document_is_ever_stored() -> None:
     """Surowe dokumenty są niezmienne, więc jawny PESEL zapisany raz zostaje na zawsze."""
     from business_osint.domain.normalization import pesel_hash, zahaszuj_pesele
