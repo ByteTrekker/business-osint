@@ -14,6 +14,12 @@ function attr(profile: EntityProfile, key: string): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+/** Atrybut logiczny. W JSON-ie to `true`, a nie napis — `attr` by go odrzucił. */
+function flaga(profile: EntityProfile, key: string): boolean {
+  const attributes = (profile.company?.attributes ?? {}) as Record<string, unknown>;
+  return attributes[key] === true;
+}
+
 const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
   active: { label: "aktywna", tone: "ok" },
   suspended: { label: "zawieszona", tone: "warn" },
@@ -61,6 +67,14 @@ export function CompanyFacts({ profile }: { profile: EntityProfile }) {
     attr(profile, "wojewodztwo"),
   ].filter(Boolean);
 
+  // Adres korespondencyjny pokazujemy tylko wtedy, gdy **różni się** od adresu
+  // działalności — u 22% wpisów tak jest. Powtórzenie tego samego adresu dwa
+  // razy niczego nie mówi, a zajmuje miejsce.
+  const korespondencja = flaga(profile, "adres_korespondencyjny_inny")
+    ? attr(profile, "adres_korespondencyjny")
+    : null;
+  const nazwaZrodlo = attr(profile, "nazwa_zrodlo");
+
   const phone = attr(profile, "phone");
   const email = attr(profile, "email");
   const www = attr(profile, "www");
@@ -69,6 +83,12 @@ export function CompanyFacts({ profile }: { profile: EntityProfile }) {
     <>
       <section className="facts">
         <h2>Dane podstawowe</h2>
+        {nazwaZrodlo && (
+          <p className="hint">
+            Nazwa {nazwaZrodlo}, nie z rejestru — CEIDG podaje dla spółki cywilnej wyłącznie NIP i
+            REGON. Tożsamością spółki jest jej NIP, nie ta etykieta.
+          </p>
+        )}
         <dl className="facts__grid">
           {status && (
             <>
@@ -87,6 +107,12 @@ export function CompanyFacts({ profile }: { profile: EntityProfile }) {
                   other={attr(profile, "pkd_other")}
                 />
               </dd>
+            </>
+          )}
+          {korespondencja && (
+            <>
+              <dt>Adres do doręczeń</dt>
+              <dd>{korespondencja}</dd>
             </>
           )}
           {address.length > 0 && (

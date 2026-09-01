@@ -20,6 +20,7 @@ ale pola `spolki` nie zwraca, więc partia nic by nie dała.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import hashlib
 import json
@@ -33,7 +34,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from business_osint.config import get_settings
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import Confidence, EntityType, RelationshipType, SourceKind
-from business_osint.etl.fetching.errors import FetchError
 from business_osint.etl.loaders import store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
 from business_osint.etl.sources.ceidg_reports import CeidgEntryClient, spolki_z_wpisu
@@ -42,6 +42,19 @@ from business_osint.etl.sources.ceidg_reports import CeidgEntryClient, spolki_z_
 #: przestało odpowiadać, ma zatrzymać pracę, a nie mielić ją bez efektu.
 #: Zadziałało już raz: przy `429` z CEIDG przerwało po 20 zamiast po 96 tysiącach.
 MAX_KOLEJNYCH_BLEDOW = 20
+
+#: Ile wpisów pobieramy równolegle.
+#:
+#: Limiter i tak trzyma tempo poniżej limitu rejestru, więc współbieżność nie
+#: podnosi obciążenia serwera — likwiduje tylko **jałowe czekanie**. Przebieg
+#: sekwencyjny wykorzystywał 453 zapytania na godzinę z dozwolonych 900: po
+#: każdym żądaniu czekał najpierw na odpowiedź, a potem jeszcze na limiter.
+#:
+#: Paczkami, nie strumieniem: punktem wznowienia jest ostatni przetworzony NIP,
+#: a przy odpowiedziach kończących się poza kolejnością „ostatni" przestałby
+#: znaczyć „wszystko przed nim gotowe". Zapisujemy go dopiero, gdy cała paczka
+#: się domknie.
+ROWNOLEGLE = 4
 
 
 @dataclass(slots=True)
@@ -133,12 +146,11 @@ async def import_partnerships(
 ) -> PartnershipStats:
     """Dopina wspólników do ich spółek cywilnych.
 
-    `after` wznawia przebieg — pełny to 97 425 wpisów i kilkanaście godzin,
-    więc przerwanie nie może oznaczać startu od zera.
+    `after` wznawia przebieg — pełny to 97 425 wpisów i kilka dób, więc
+    przerwanie nie może oznaczać startu od zera.
     """
     stats = PartnershipStats()
-    ustawienia = get_settings()
-    token = ustawienia.ceidg_token or ""
+    token = get_settings().ceidg_token or ""
     if not token:
         stats.aborted = "brak tokenu CEIDG w konfiguracji"
         return stats
@@ -150,56 +162,70 @@ async def import_partnerships(
     client = CeidgEntryClient(token)
     pod_rzad = 0
     try:
-        for cel in cele:
-            try:
-                firma = await client.fetch(cel.nip)
-            except FetchError as blad:
-                stats.errors += 1
-                pod_rzad += 1
-                if pod_rzad >= MAX_KOLEJNYCH_BLEDOW:
-                    stats.aborted = f"{MAX_KOLEJNYCH_BLEDOW} błędów z rzędu: {blad}"
-                    break
-                continue
-            pod_rzad = 0
-            stats.checked += 1
-            stats.last_nip = cel.nip
+        for poczatek in range(0, len(cele), ROWNOLEGLE):
+            paczka = cele[poczatek : poczatek + ROWNOLEGLE]
+            wyniki = await asyncio.gather(
+                *(client.fetch(cel.nip) for cel in paczka), return_exceptions=True
+            )
 
-            spolki = spolki_z_wpisu(firma)
-            if not spolki:
-                stats.without_partnership += 1
-            else:
-                async with factory() as session, session.begin():
-                    source_id = await get_or_create_source(
-                        session,
-                        SourceKind.CEIDG,
-                        "dane.biznes.gov.pl",
-                        "https://dane.biznes.gov.pl",
-                    )
-                    # Suma kontrolna liczona z treści, bo `store_raw_document`
-                    # dedupuje po niej — ponowny przebieg nie ma tworzyć
-                    # drugiego snapshotu tego samego wpisu.
-                    tresc = json.dumps(firma, ensure_ascii=False, sort_keys=True)
-                    raw_id, _ = await store_raw_document(
-                        session,
-                        source_id=source_id,
-                        external_id=f"ceidg/firma/{cel.nip}",
-                        url=f"https://dane.biznes.gov.pl/api/ceidg/v3/firma?nip={cel.nip}",
-                        fetched_at=dt.datetime.now(dt.UTC),
-                        content_sha256=hashlib.sha256(tresc.encode()).hexdigest(),
-                        payload=firma or {},
-                    )
-                    for nip_spolki, regon in spolki:
-                        spolka_id, nowa = await _spolka_entity(session, nip=nip_spolki, regon=regon)
-                        if nowa:
-                            stats.partnerships_created += 1
-                        stats.edges_created += await _dopnij(
-                            session, osoba=cel.osoba, spolka=spolka_id, raw_id=raw_id
-                        )
+            przerwij = False
+            for cel, wynik in zip(paczka, wyniki, strict=True):
+                if isinstance(wynik, BaseException):
+                    stats.errors += 1
+                    pod_rzad += 1
+                    if pod_rzad >= MAX_KOLEJNYCH_BLEDOW:
+                        stats.aborted = f"{MAX_KOLEJNYCH_BLEDOW} błędów z rzędu: {wynik}"
+                        przerwij = True
+                        break
+                    continue
+                pod_rzad = 0
+                stats.checked += 1
+                await _zapisz(factory, cel=cel, firma=wynik, stats=stats)
+
+            # Dopiero teraz: cała paczka się domknęła, więc wszystko do tego
+            # numeru jest naprawdę przetworzone i wznowienie go nie pominie.
+            if przerwij:
+                break
+            stats.last_nip = paczka[-1].nip
             if progress is not None:
                 progress(stats)
     finally:
         await client.aclose()
     return stats
+
+
+async def _zapisz(
+    factory: Any, *, cel: Any, firma: dict[str, Any] | None, stats: PartnershipStats
+) -> None:
+    """Zapisuje jeden wpis: dokument źródłowy, encję spółki i krawędzie."""
+    spolki = spolki_z_wpisu(firma)
+    if not spolki:
+        stats.without_partnership += 1
+        return
+
+    async with factory() as session, session.begin():
+        source_id = await get_or_create_source(
+            session, SourceKind.CEIDG, "dane.biznes.gov.pl", "https://dane.biznes.gov.pl"
+        )
+        # Suma kontrolna z treści, bo `store_raw_document` dedupuje po niej —
+        # ponowny przebieg nie ma tworzyć drugiego snapshotu tego samego wpisu.
+        tresc = json.dumps(firma, ensure_ascii=False, sort_keys=True)
+        raw_id, _ = await store_raw_document(
+            session,
+            source_id=source_id,
+            external_id=f"ceidg/firma/{cel.nip}",
+            url=f"https://dane.biznes.gov.pl/api/ceidg/v3/firma?nip={cel.nip}",
+            fetched_at=dt.datetime.now(dt.UTC),
+            content_sha256=hashlib.sha256(tresc.encode()).hexdigest(),
+            payload=firma or {},
+        )
+        for nip_spolki, regon in spolki:
+            spolka_id, nowa = await _spolka_entity(session, nip=nip_spolki, regon=regon)
+            if nowa:
+                stats.partnerships_created += 1
+            stats.edges_created += await _dopnij(
+                session, osoba=cel.osoba, spolka=spolka_id, raw_id=raw_id
+            )
 
 
 async def _dopnij(

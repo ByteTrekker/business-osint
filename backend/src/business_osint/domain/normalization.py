@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from collections import Counter
 
 __all__ = [
     "LEGAL_FORM_TOKENS",
@@ -16,6 +17,7 @@ __all__ = [
     "is_valid_krs",
     "is_valid_nip",
     "is_valid_regon",
+    "nazwa_spolki_z_wpisu",
     "normalize_company_name",
     "normalize_person_name",
     "person_blocking_key",
@@ -340,3 +342,75 @@ def pesel_hash(pesel: str, pepper: str) -> str:
     if len(digits) != 11:
         raise ValueError("PESEL musi mieć 11 cyfr")
     return hashlib.blake2b(f"{pepper}:{digits}".encode(), digest_size=16).hexdigest()
+
+
+#: Zwroty, po których w nazwie wpisu CEIDG następuje nazwa spółki cywilnej.
+#: Kolejność ma znaczenie: dłuższy wariant musi być sprawdzony pierwszy,
+#: inaczej krótszy uciąłby dopasowanie w złym miejscu.
+_MARKERY_SPOLKI = (
+    "wspólnikiem spółki cywilnej",
+    "wspólnik spółki cywilnej",
+    "wspolnik spolki cywilnej",
+    "spółka cywilna",
+    "spolka cywilna",
+)
+
+#: Końcówka „s.c." wraz z ewentualnym cudzysłowem zamykającym. Cudzysłów musi
+#: być częścią wzorca, bo inaczej `$` nie dopasuje się do `"PLASTECH S.C."`
+#: i końcówka zostałaby w nazwie.
+_KONCOWKI_SC = re.compile(
+    r"\s*(s\.?\s*c\.?|spółka cywilna|spolka cywilna)\s*[\"\'„”»«]*\s*$", re.IGNORECASE
+)
+
+#: Znaki, które nie należą do nazwy, gdziekolwiek by nie stały na jej brzegu.
+_OBRAMOWANIE = " -–—:,.\"'„”»«"
+
+
+def nazwa_spolki_z_wpisu(nazwa_wpisu: str) -> str | None:
+    """Nazwa spółki cywilnej wyłuskana z nazwy wpisu wspólnika.
+
+    CEIDG **nie podaje nazwy spółki** — w polu `spolki` są tylko NIP i REGON.
+    Nazwa bywa za to w nazwie samego wpisu: „JAROSŁAW TKACZYK wspólnik spółki
+    cywilnej PLASTECH". Wyłuskujemy to, co stoi za zwrotem o wspólniku.
+
+    To jest **heurystyka na etykietę**, nie na tożsamość. Tożsamością spółki
+    pozostaje jej NIP; zła etykieta jest brzydka, ale niczego nie scala
+    ani nie rozdziela — niezmiennik N4 nie jest tu w grze.
+
+    Zwraca ``None``, gdy nazwa nie niesie wskazówki (np. „Marek Duda").
+    """
+    tekst = " ".join(nazwa_wpisu.split())
+    obnizony = tekst.lower()
+    for marker in _MARKERY_SPOLKI:
+        pozycja = obnizony.find(marker)
+        if pozycja == -1:
+            continue
+        # Najpierw końcówka „s.c.", potem **jedno** przycięcie brzegów.
+        # Trzy kolejne `strip` o zachodzących zbiorach znaków wzajemnie się
+        # maskowały: usunięcie któregokolwiek nie zmieniało wyniku, więc nie
+        # dało się ich pokryć testem — a to znaczy, że były zbędne.
+        reszta = _KONCOWKI_SC.sub("", tekst[pozycja + len(marker) :])
+        reszta = reszta.strip(_OBRAMOWANIE)
+        # Jednoliterowa resztka to szum, nie nazwa.
+        if len(reszta) >= 2:
+            return reszta
+    return None
+
+
+def uzgodnij_nazwe_spolki(nazwy: list[str]) -> str | None:
+    """Nazwa spółki uzgodniona między jej wspólnikami.
+
+    Gdy dwóch wspólników niezależnie wskazuje tę samą nazwę, jest to dwa
+    niezależne świadectwa i bierzemy ją bez wahania. Gdy wskazują różne,
+    bierzemy najczęstszą — ale gdy żadna się nie powtarza, wybór między nimi
+    byłby zgadywaniem, więc bierzemy po prostu pierwszą i tyle.
+    """
+    kandydaci = [k for k in (nazwa_spolki_z_wpisu(n) for n in nazwy) if k]
+    if not kandydaci:
+        return None
+    # `Counter` zamiast ręcznego słownika z domyślną wartością, a `next`
+    # zamiast pętli z awaryjnym `return` na końcu: ten `return` był nieosiągalny,
+    # bo najczęstszy klucz zawsze pochodzi od któregoś kandydata.
+    licznik = Counter(kandydat.casefold() for kandydat in kandydaci)
+    najlepszy = max(licznik, key=licznik.__getitem__)
+    return next(kandydat for kandydat in kandydaci if kandydat.casefold() == najlepszy)

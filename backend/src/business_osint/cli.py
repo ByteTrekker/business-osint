@@ -199,6 +199,20 @@ def import_partnerships_cmd(
     _echo_data_check(report)
 
 
+@app.command("ceidg-backfill")
+def ceidg_backfill_cmd() -> None:
+    """Wyciąga z zapisanych wpisów CEIDG to, czego import nie brał.
+
+    Kody urzędowe adresu, adres korespondencyjny i nazwy spółek cywilnych.
+    Przebieg po bazie — dokumenty już mamy, nic nie pobieramy ponownie.
+    """
+    from business_osint.etl.ceidg_backfill import backfill
+
+    stats, report = asyncio.run(_with_data_check(backfill()))
+    typer.echo(f"Uzupelnienie CEIDG: {stats.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(

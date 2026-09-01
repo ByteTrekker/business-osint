@@ -528,3 +528,114 @@ def test_the_bare_voivodeship_code_is_enough() -> None:
     """
     assert wojewodztwo_z_teryt("08") == "lubuskie"
     assert wojewodztwo_z_teryt("14") == "mazowieckie"
+
+
+class TestNazwaSpolkiCywilnej:
+    """CEIDG nie podaje nazwy spółki — wyłuskujemy ją z nazwy wpisu wspólnika."""
+
+    def test_name_after_the_partner_phrase_is_the_partnership(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        assert nazwa_spolki_z_wpisu("JAROSŁAW TKACZYK wspólnik spółki cywilnej PLASTECH") == (
+            "PLASTECH"
+        )
+
+    def test_trailing_sc_marker_is_not_part_of_the_name(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # „PLASTECH S.C." i „PLASTECH" to ta sama spółka; gdyby końcówka
+        # zostawała, dwaj wspólnicy nie uzgodniliby jednej nazwy.
+        assert nazwa_spolki_z_wpisu("Marek Tkaczyk Wspólnik Spółki Cywilnej PLASTECH S.C.") == (
+            "PLASTECH"
+        )
+
+    def test_quotes_around_the_name_are_stripped(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        assert nazwa_spolki_z_wpisu('ANDRZEJ STĘPIEŃ - wspólnik spółki cywilnej "MASZ"') == "MASZ"
+
+    def test_longer_phrase_wins_so_the_name_is_not_cut_short(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # „wspólnikiem spółki cywilnej" zawiera w sobie „spółki cywilnej";
+        # dopasowanie krótszego wariantu zostawiłoby wiodące „m".
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnikiem spółki cywilnej ALFA") == "ALFA"
+
+    def test_name_without_any_hint_yields_nothing(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # Zgadywanie z „Marek Duda" dałoby etykietę będącą nazwiskiem osoby.
+        assert nazwa_spolki_z_wpisu("Marek Duda") is None
+
+    def test_single_character_leftover_is_noise_not_a_name(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej X") is None
+
+    def test_partners_agreeing_on_a_name_settle_it(self) -> None:
+        from business_osint.domain.normalization import uzgodnij_nazwe_spolki
+
+        assert (
+            uzgodnij_nazwe_spolki(
+                [
+                    "JAROSŁAW TKACZYK wspólnik spółki cywilnej PLASTECH",
+                    "Marek Tkaczyk Wspólnik Spółki Cywilnej PLASTECH S.C.",
+                ]
+            )
+            == "PLASTECH"
+        )
+
+    def test_the_name_more_partners_give_wins(self) -> None:
+        from business_osint.domain.normalization import uzgodnij_nazwe_spolki
+
+        assert (
+            uzgodnij_nazwe_spolki(
+                [
+                    "A wspólnik spółki cywilnej BETA",
+                    "B wspólnik spółki cywilnej ALFA",
+                    "C wspólnik spółki cywilnej ALFA",
+                ]
+            )
+            == "ALFA"
+        )
+
+    def test_partners_without_a_hint_leave_the_partnership_unnamed(self) -> None:
+        from business_osint.domain.normalization import uzgodnij_nazwe_spolki
+
+        assert uzgodnij_nazwe_spolki(["Marek Duda", "Karolina Duda"]) is None
+
+    def test_punctuation_right_after_the_phrase_is_not_part_of_the_name(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # Wpisy bywają zapisane z dwukropkiem albo myślnikiem po zwrocie
+        # o wspólniku; bez ich odcięcia nazwa zaczynałaby się od znaku.
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI, wspólnik spółki cywilnej: ALFA") == "ALFA"
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej — BETA") == "BETA"
+
+    def test_punctuation_exposed_by_removing_the_sc_suffix_is_trimmed(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # Dopiero usunięcie końcówki „s.c." odsłania myślnik na końcu nazwy —
+        # gdyby ostatnie przycięcie nie działało, zostałoby „ALFA -".
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej ALFA - s.c.") == "ALFA"
+
+    def test_leading_quote_survives_to_the_final_trim(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej ALFA, s.c.") == "ALFA"
+
+    def test_the_first_partner_phrase_wins_not_the_last(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # Nazwa spółki sama bywa zbudowana ze zwrotu o spółce cywilnej.
+        # Szukanie od końca zwróciłoby wyłącznie ogon, gubiąc początek nazwy.
+        assert (
+            nazwa_spolki_z_wpisu("ALFA SPÓŁKA CYWILNA BETA SPÓŁKA CYWILNA GAMMA")
+            == "BETA SPÓŁKA CYWILNA GAMMA"
+        )
+
+    def test_two_letter_name_is_kept(self) -> None:
+        from business_osint.domain.normalization import nazwa_spolki_z_wpisu
+
+        # Granica jest przy dwóch znakach: „AB" to nazwa, „X" to resztka.
+        assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej AB") == "AB"

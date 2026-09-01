@@ -100,7 +100,9 @@ PROFILES: dict[SourceKind, SourceProfile] = {
         # zgadywane — przy nim przebieg po pojedynczych wpisach dostał 429 po
         # 930 zapytaniach. Rejestr **publikuje** swój limit, wbrew założeniu
         # z nagłówka tego pliku; trzeba było przeczytać nagłówki, nie zgadywać.
-        rate_per_second=1000 / 3600,
+        # 900, nie 1000: tempo równe limitowi siedzi dokładnie na jego krawędzi,
+        # a okno jest przesuwne — wystarczy jedno ponowienie, żeby je przekroczyć.
+        rate_per_second=900 / 3600,
         concurrency=1,
         retry=_CAREFUL,
         estimated_objects=2_500_000,
