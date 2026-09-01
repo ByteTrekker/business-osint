@@ -135,6 +135,27 @@ priorytetowi, nie chronologii.
       Dokładniejszy od Nominatima: dla adresu testowego różnica 75 m, bo PRG
       wskazuje punkt adresowy budynku, a Nominatim interpoluje wzdłuż ulicy.
 
+- [ ] **MSiG jako jedyna znana droga do warstwy `osoba → spółka`.**
+      Sprawdzone 2026-09-01: `wyszukiwarka-msig.ms.gov.pl` wydaje każdy numer
+      od 1996 jako PDF (`/api/Monitor/Download?id={id}&fileId=true`), około 250
+      numerów rocznie po 0,5–2 MB. W numerze 1/2026 **zero maskowania i 36
+      jawnych PESEL-i** — dokładnie to, co KRS przez API zasłania.
+      **Blokada: opinia prawna.** Publikacja w dzienniku urzędowym to nie to
+      samo co podstawa do zbudowania wyszukiwarki po nazwisku. Przed startem:
+      zawęzić zakres do wpisów KRS (pominąć upadłości osób fizycznych
+      nieprowadzących działalności) i haszować PESEL **przed** zapisem do
+      `raw_documents`. Pełna analiza: [02-zrodla-danych.md](02-zrodla-danych.md).
+
+- [ ] **CRBR po NIP-ie, na żądanie** — beneficjenci rzeczywiści, czyli to,
+      czego w KRS nie ma w ogóle. API publiczne: `POST /adcrbr/api/wyszukajSpolke`.
+      Model jak przy KRS: pojedyncze zapytanie przy oglądaniu podmiotu, bez
+      budowania kopii rejestru. Nie ma eksportu zbiorczego i to jest zaleta.
+
+- [ ] **REGON / BIR1 — największa dziura w źródłach.** Nie z powodu treści,
+      tylko roli: daje listę numerów KRS, bez której nie wiadomo, o co pytać
+      KRS. Dzisiejsze 23 683 numery pochodzą z GLEIF, czyli z próbki
+      obciążonej w stronę dużych podmiotów.
+
 - [ ] **Spółki cywilne z CEIDG.** Raport „brak województwa" oznacza 3 328
       wpisów jako „działalność prowadzona wyłącznie w formie spółki cywilnej".
       To jedyna droga do prawdziwej warstwy powiązań między osobami w CEIDG —
