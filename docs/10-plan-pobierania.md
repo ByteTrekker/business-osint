@@ -24,6 +24,37 @@ Punkty 1 i 2 nie mają blokad i nie wymagają nowych decyzji. Reszta wymaga.
 
 ---
 
+## Korekta z 2026-09-01, po pierwszym przebiegu
+
+Dwie rzeczy, których nie wiedziałem, pisząc ten plan.
+
+**MF ma dzienny limit zapytań na adres IP.** Kod `WL-191`, komunikat „Limit
+żądań dla tego adresu IP został na dziś wyczerpany". Nie znalazłem go
+udokumentowanego; wyczerpał się po około 5 600 numerach. Przy takim pułapie
+118 676 zapytań to nie jest zadanie na kilkanaście godzin, tylko na lata.
+
+**Ale liczba 118 676 była i tak błędna.** Z 3 560 269 NIP-ów w bazie
+**3 552 839 należy do jednoosobowych działalności z CEIDG, które numeru KRS nie
+mają z definicji.** Odpytywanie ich o most identyfikatorowy to praca bez
+możliwego wyniku: z 5 610 wydanych numerów KRS przybyło dla **105**, czyli 1,9
+procent.
+
+Zbiór, który faktycznie może nieść most, to **7 343 numery** — podmioty z NIP-em,
+bez KRS-u, niebędące jednoosobową działalnością. To jest **245 zapytań**,
+mieszczące się w dziennym limicie z ogromnym zapasem.
+
+Czyli: limit nie zablokował białej listy. Zablokował ją **ten plan**, który
+wycelował ją w trzy i pół miliona podmiotów, dla których nie miała nic do
+powiedzenia. Poprawione — `enrich-whitelist` domyślnie chodzi po zbiorze
+`bridge`.
+
+Do czego dzienny limit **nadal** ma znaczenie: REGON przybywa także dla
+działalności jednoosobowych (55 procent trafień). Jeżeli chcemy REGON dla całej
+bazy, to jest osobny cel i wtedy potrzebny jest plik zbiorczy MF albo rozłożenie
+przebiegu na wiele dni. **Adresu pliku zbiorczego nie potwierdziłem.**
+
+---
+
 ## 1. Biała lista VAT — najpierw, bo jest kręgosłupem
 
 To źródło było na liście jako „status VAT i rachunki bankowe". Sprawdzenie
@@ -37,16 +68,18 @@ Zmierzone:
 
 * partia to **maksymalnie 30 NIP-ów** — 31 daje `WL-130 Przekroczono maksymalną
   liczbę argumentów zapytania`;
+* obowiązuje **dzienny limit zapytań na adres IP** (`WL-191`) — patrz korekta
+  wyżej;
 * odpowiedź na podmiot: `name, nip, regon, krs, statusVat, workingAddress,
   residenceAddress, accountNumbers, registrationLegalDate, removalBasis,
   representatives, authorizedClerks, partners`;
 * dla PKN ORLEN wróciło 236 numerów rachunków.
 
-**Dlaczego to jest pierwsze.** Dziś mamy 23 683 numery KRS i wszystkie pochodzą
-z GLEIF, czyli z próbki przechylonej w stronę dużych podmiotów — nie wiemy
-nawet, o które spółki zapytać KRS. Biała lista daje ten spis z NIP-ów, które
-już mamy: 3 560 269 NIP-ów podzielone po 30 to **118 676 zapytań**. Przy jednym
-zapytaniu na sekundę to około półtorej doby, przy pięciu — siedem godzin.
+**Dlaczego to jest pierwsze.** Dziś mamy 23 788 numerów KRS i niemal wszystkie
+pochodzą z GLEIF, czyli z próbki przechylonej w stronę dużych podmiotów — nie
+wiemy nawet, o które spółki zapytać KRS. Biała lista daje ten spis z NIP-ów,
+które już mamy, i kosztuje **245 zapytań**, bo tylko tyle podmiotów w bazie może
+mieć numer KRS.
 
 To jest tańsza droga do tego samego, co REGON/BIR1, i nie wymaga wniosku
 o klucz. **REGON zostaje w planie**, ale schodzi za białą listę: jego przewagą
