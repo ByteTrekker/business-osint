@@ -14,10 +14,11 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from business_osint.config import get_settings
 from business_osint.db.models import EntityIdentifier
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import IdentifierScheme, SourceKind
-from business_osint.domain.normalization import is_valid_krs, is_valid_regon
+from business_osint.domain.normalization import is_valid_krs, is_valid_regon, zahaszuj_pesele
 from business_osint.etl.fetching.errors import FetchError
 from business_osint.etl.loaders import store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
@@ -31,6 +32,8 @@ from business_osint.etl.sources.mf_whitelist import (
 @dataclass(slots=True)
 class WhitelistStats:
     nips_checked: int = 0
+    #: Ostatni przetworzony NIP — punkt wznowienia po przerwaniu przebiegu.
+    last_nip: str = ""
     identifiers_added: int = 0
     vat_active: int = 0
     not_found: int = 0
@@ -39,6 +42,7 @@ class WhitelistStats:
     def as_dict(self) -> dict[str, int]:
         return {
             "nips_checked": self.nips_checked,
+            "last_nip": self.last_nip,  # type: ignore[dict-item]
             "identifiers_added": self.identifiers_added,
             "vat_active": self.vat_active,
             "not_found": self.not_found,
@@ -46,8 +50,18 @@ class WhitelistStats:
         }
 
 
-async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) -> WhitelistStats:
-    """Dla każdego znanego NIP-u dopina REGON i KRS z białej listy."""
+async def enrich_identifiers(
+    *, limit: int | None = None, after: str | None = None, progress: Any = None
+) -> WhitelistStats:
+    """Dla każdego znanego NIP-u dopina REGON i KRS z białej listy.
+
+    `after` wznawia przebieg od podanego NIP-u. Pełny przebieg to 118 676
+    zapytań i kilkanaście godzin; bez punktu wznowienia każde przerwanie
+    oznaczałoby zaczynanie od zera, co jest wprost sprzeczne z regułą warstwy
+    pobierania: przerwany przebieg wznawia się, nie startuje na nowo.
+    Kolejność po `value` jest stabilna, więc ostatni przetworzony NIP wystarczy
+    za cały stan.
+    """
     stats = WhitelistStats()
     factory = get_etl_sessionmaker()
     date = dt.date.today().isoformat()
@@ -61,11 +75,12 @@ async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) 
                 SELECT i.value AS nip, i.entity_id
                 FROM entity_identifiers i
                 WHERE i.scheme = 'nip'
+                  AND (CAST(:after AS text) IS NULL OR i.value > CAST(:after AS text))
                 ORDER BY i.value
                 LIMIT CAST(:limit AS bigint)
                 """
             ),
-            {"limit": limit},
+            {"limit": limit, "after": after},
         )
         targets = {row.nip: row.entity_id for row in rows}
 
@@ -81,6 +96,7 @@ async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) 
                 continue
 
             stats.nips_checked += len(batch)
+            stats.last_nip = batch[-1]
             async with factory() as session, session.begin():
                 source_id = await get_or_create_source(
                     session, SourceKind.MF_WHITELIST, "wl-api.mf.gov.pl", "https://wl-api.mf.gov.pl"
@@ -92,7 +108,13 @@ async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) 
                     url=document.url,
                     fetched_at=document.fetched_at,
                     content_sha256=document.content_sha256,
-                    payload=document.payload,
+                    # Biała lista zwraca `pesel` osób fizycznych prowadzących
+                    # działalność. Haszujemy **przed** zapisem: `raw_documents`
+                    # są niezmienne, więc jawny PESEL zapisany tu raz zostaje
+                    # na zawsze. Suma kontrolna dotyczy odpowiedzi, jaką
+                    # dostaliśmy, więc liczymy ją przed podmianą — inaczej
+                    # przestałaby cokolwiek świadczyć o źródle.
+                    payload=zahaszuj_pesele(document.payload, get_settings().pesel_pepper),
                 )
                 for bridge in extract_identifier_bridges(document.payload):
                     entity_id = targets.get(bridge["nip"])
