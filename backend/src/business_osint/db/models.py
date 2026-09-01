@@ -291,6 +291,11 @@ class Address(Base):
     normalized: Mapped[str] = mapped_column(Text, nullable=False)
     #: TERYT/ULIC, jeśli uda się dopasować do rejestru adresowego.
     teryt: Mapped[str | None] = mapped_column(String(16))
+    #: Kody urzędowe **wprost z wpisu CEIDG**, a nie z dopasowania do PRG.
+    #: Dopasowanie po napisie zawiodło dla 475 707 adresów; te kody nie
+    #: wymagają zgadywania i rozróżniają ulice o tej samej nazwie.
+    simc: Mapped[str | None] = mapped_column(String(16))
+    ulic: Mapped[str | None] = mapped_column(String(16))
     #: Klucz dopasowania do punktów adresowych PRG, liczony **w Pythonie** tą
     #: samą funkcją co po stronie PRG. Trzymamy go w kolumnie zamiast liczyć
     #: w zapytaniu, bo druga implementacja tej samej reguły rozjeżdża się przy
@@ -310,6 +315,7 @@ class Address(Base):
         UniqueConstraint("normalized", name="uq_addresses_normalized"),
         Index("ix_addresses_city", "city"),
         Index("ix_addresses_match_key", "match_key"),
+        Index("ix_addresses_simc", "simc"),
         # Częściowy: mapa pyta wyłącznie o adresy, które mają współrzędne.
         Index(
             "ix_addresses_coordinates",

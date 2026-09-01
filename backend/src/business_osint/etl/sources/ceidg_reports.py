@@ -23,6 +23,11 @@ from typing import Any
 
 import httpx
 
+from business_osint.domain.enums import SourceKind
+from business_osint.etl.fetching.client import ResilientClient
+from business_osint.etl.fetching.profiles import PROFILES
+from business_osint.etl.fetching.rate_limit import RateLimiter
+
 BASE_URL = "https://dane.biznes.gov.pl/api/ceidg/v3"
 
 #: Nazwa raportu, który zawiera zarejestrowane działalności (a nie wnioski).
@@ -100,3 +105,71 @@ def iter_report_rows(payload: bytes) -> Iterator[dict[str, Any]]:
             # utf-8-sig: pliki mają BOM, przez który pierwsza kolumna nazywałaby się "﻿Lp."
             text = io.TextIOWrapper(handle, encoding="utf-8-sig", newline="")
             yield from csv.DictReader(text, delimiter=";")
+
+
+#: Pojedynczy wpis CEIDG. **Tylko ten punkt zwraca pole `spolki`** —
+#: odpowiednik zbiorczy `/firmy` przyjmuje do pięciu NIP-ów naraz, ale
+#: `spolki` w nim nie ma, więc partia niczego by nie przyspieszyła.
+FIRMA_URL = f"{BASE_URL}/firma"
+
+
+class CeidgEntryClient:
+    """Odczyt pojedynczych wpisów CEIDG po numerze NIP.
+
+    Istnieje wyłącznie po to, żeby dostać `spolki` — listę spółek cywilnych,
+    w których wpis uczestniczy. Raport zbiorczy ma 24 kolumny i **żadna nie
+    identyfikuje spółki**: `StatusDzialalnosci` mówi tylko, że ktoś działa
+    wyłącznie w tej formie, nie mówi z kim. Bez tego punktu nie da się
+    zbudować krawędzi między wspólnikami.
+
+    Idzie przez `ResilientClient`, a nie przez gołego `httpx`. Pierwsza wersja
+    tego klienta miała własne połączenie bez limitu tempa i bez obsługi
+    `Retry-After` — dostała `429` po 930 zapytaniach i zatrzymała przebieg.
+    Rejestr podaje swój limit w nagłówkach `x-rate-limit-*`: **1000 zapytań
+    na 60 minut**.
+    """
+
+    def __init__(self, token: str, client: ResilientClient | None = None) -> None:
+        self._client = client or self._domyslny(token)
+
+    @staticmethod
+    def _domyslny(token: str) -> ResilientClient:
+        return ResilientClient(
+            source=SourceKind.CEIDG.value,
+            client=httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                headers={
+                    "Authorization": f"Bearer {token.strip()}",
+                    "Accept": "application/json",
+                    "User-Agent": USER_AGENT,
+                },
+                follow_redirects=True,
+            ),
+            rate_limiter=RateLimiter(PROFILES[SourceKind.CEIDG].rate_per_second),
+            retry_policy=PROFILES[SourceKind.CEIDG].retry,
+        )
+
+    async def fetch(self, nip: str) -> dict[str, Any] | None:
+        """Wpis dla numeru NIP albo ``None``, gdy rejestr go nie zna."""
+        document = await self._client.get_json(
+            FIRMA_URL, external_id=f"ceidg/firma/{nip}", params={"nip": nip}
+        )
+        firma = document.payload.get("firma")
+        if isinstance(firma, list):
+            return firma[0] if firma else None
+        return firma if isinstance(firma, dict) else None
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
+def spolki_z_wpisu(firma: dict[str, Any] | None) -> list[tuple[str, str]]:
+    """Pary (NIP, REGON) spółek cywilnych z wpisu. Bez NIP-u para jest bezużyteczna."""
+    if not firma:
+        return []
+    wynik = []
+    for spolka in firma.get("spolki") or []:
+        nip = str(spolka.get("nip") or "").strip()
+        if nip:
+            wynik.append((nip, str(spolka.get("regon") or "").strip()))
+    return wynik
