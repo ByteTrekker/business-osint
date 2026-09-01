@@ -29,15 +29,14 @@ MAX_ROZPIETOSC = 20.0
 class ClusterOut(BaseModel):
     latitude: float
     longitude: float
-    address_id: uuid.UUID | None = Field(
+    label: str | None = Field(
         default=None,
         description=(
-            "Identyfikator adresu — wypełniony wyłącznie na poziomie "
-            "szczegółowym. Podaj go do `/entities/{id}/co-located`, żeby "
-            "dostać podmioty zarejestrowane pod tym adresem."
+            "Adres — tylko na poziomie szczegółowym. Gdy `addresses` jest "
+            "większe od jedynki, jest to nazwa jednego z adresów pod tym "
+            "punktem, nie ich wszystkich."
         ),
     )
-    label: str | None = Field(default=None, description="Adres, jeśli znacznik jest pojedynczy")
     addresses: int = Field(description="Ile adresów wpadło do tej komórki")
     entities: int = Field(
         description=(
@@ -98,13 +97,69 @@ async def get_clusters(
                 longitude=c.longitude,
                 addresses=c.addresses,
                 entities=c.entities,
-                address_id=c.address_id,
                 label=c.label,
             )
             for c in wycinek.clusters
         ],
         cell_degrees=wycinek.cell_degrees,
         truncated=wycinek.truncated,
+    )
+
+
+class AtPointOut(BaseModel):
+    id: uuid.UUID
+    type: str
+    name: str
+    address: str
+    nip: str | None = None
+    krs: str | None = None
+    status: str | None = None
+    degree: int
+
+
+class PointPageOut(BaseModel):
+    items: list[AtPointOut]
+    total: int
+    has_more: bool
+
+
+@router.get(
+    "/point",
+    response_model=PointPageOut,
+    summary="Podmioty pod jednym punktem na mapie",
+    description=(
+        "Wszystkie podmioty zarejestrowane pod adresami o tych współrzędnych. "
+        "To jest szersze pytanie niż `/entities/{id}/co-located`, które dotyczy "
+        "jednego wpisu adresowego: w bloku każdy lokal jest osobnym adresem, "
+        "a PRG daje im wszystkim jeden punkt budynku."
+    ),
+)
+async def get_at_point(
+    session: SessionDep,
+    lat: Annotated[float, Query(ge=-90, le=90)],
+    lon: Annotated[float, Query(ge=-180, le=180)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 30,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> PointPageOut:
+    rows, total = await MapRepository(session).at_point(
+        lat=lat, lon=lon, limit=limit, offset=offset
+    )
+    return PointPageOut(
+        items=[
+            AtPointOut(
+                id=row["id"],
+                type=row["entity_type"],
+                name=row["display_name"],
+                address=row["adres"],
+                nip=row["nip"],
+                krs=row["krs"],
+                status=row["status"],
+                degree=row["degree"],
+            )
+            for row in rows
+        ],
+        total=total,
+        has_more=offset + len(rows) < total,
     )
 
 

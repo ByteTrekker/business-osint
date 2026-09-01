@@ -10,6 +10,7 @@ import hashlib
 import re
 import unicodedata
 from collections import Counter
+from typing import Any
 
 __all__ = [
     "LEGAL_FORM_TOKENS",
@@ -23,6 +24,7 @@ __all__ = [
     "person_blocking_key",
     "pesel_hash",
     "split_person_name",
+    "zahaszuj_pesele",
 ]
 
 #: Formy prawne i skróty usuwane przy porównywaniu nazw.
@@ -329,6 +331,34 @@ def is_valid_krs(value: str) -> bool:
     """KRS nie ma sumy kontrolnej — sprawdzamy tylko format (10 cyfr)."""
     digits = _DIGITS_RE.sub("", value)
     return len(digits) == 10
+
+
+def zahaszuj_pesele(dane: Any, pepper: str) -> Any:
+    """Zwraca kopię dokumentu z każdym polem ``pesel`` zamienionym na skrót.
+
+    Uruchamiane **przed** zapisem surowego dokumentu, nie po. `raw_documents`
+    to też dysk: dokument zapisany jawnie i zahaszowany dopiero przy mapowaniu
+    zostawia PESEL w bazie na zawsze, a niezmienność surowych dokumentów
+    (niezmiennik N1) sprawia, że nie da się tego potem posprzątać.
+
+    Wartość, której nie da się rozpoznać jako PESEL, **usuwamy** zamiast
+    przepuścić. Pole nazwane `pesel` z zawartością, której nie rozumiemy, jest
+    ostatnią rzeczą, jaką chcemy zachować w oryginale.
+    """
+    if isinstance(dane, dict):
+        wynik: dict[str, Any] = {}
+        for klucz, wartosc in dane.items():
+            if klucz.lower() == "pesel" and wartosc is not None:
+                try:
+                    wynik[klucz] = pesel_hash(str(wartosc), pepper)
+                except ValueError:
+                    wynik[klucz] = None
+            else:
+                wynik[klucz] = zahaszuj_pesele(wartosc, pepper)
+        return wynik
+    if isinstance(dane, list):
+        return [zahaszuj_pesele(element, pepper) for element in dane]
+    return dane
 
 
 def pesel_hash(pesel: str, pepper: str) -> str:

@@ -1,13 +1,14 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Map as LeafletMap, CircleMarker } from "leaflet";
 
 import {
-  api,
+  fetchAtPoint,
   fetchMapClusters,
   fetchMapCoverage,
-  type CoLocated,
+  type AtPoint,
   type MapCluster,
   type MapCoverage,
 } from "@/lib/api";
@@ -37,7 +38,21 @@ import {
  */
 const OBSZAR_DANYCH = { south: 48.5, north: 55.5, west: 13.0, east: 25.5 };
 
+/** Punkt z adresu URL, o ile jest i o ile leży w obszarze, który mamy. */
+function punktZAdresu(parametry: URLSearchParams): [number, number] | null {
+  const lat = Number(parametry.get("lat"));
+  const lon = Number(parametry.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < OBSZAR_DANYCH.south || lat > OBSZAR_DANYCH.north) return null;
+  if (lon < OBSZAR_DANYCH.west || lon > OBSZAR_DANYCH.east) return null;
+  return [lat, lon];
+}
+
 export function ClusterMap() {
+  // Wejście z profilu podmiotu: `/mapa?lat=..&lon=..`. Bez tego jedyną drogą
+  // do zobaczenia konkretnej firmy na mapie było przybliżanie w jej okolicę
+  // na oko — a przy 1,9 mln adresów to nie jest droga.
+  const parametry = useSearchParams();
   // Leaflet ładujemy przez stan, a nie `await` wewnątrz efektu tworzącego mapę.
   // Przy `await` tworzenie mapy dzieje się asynchronicznie, a sprzątanie
   // synchronicznie — przy podwójnym montowaniu (React StrictMode, Fast Refresh)
@@ -67,9 +82,10 @@ export function ClusterMap() {
   useEffect(() => {
     if (!L || !kontener.current) return;
 
+    const wskazany = punktZAdresu(parametry);
     const instancja = L.map(kontener.current, {
-      center: [52.0, 19.4],
-      zoom: 6,
+      center: wskazany ?? [52.0, 19.4],
+      zoom: wskazany ? 17 : 6,
       minZoom: 5,
       maxZoom: 18,
       // Bez tego przesunięcie widoku poza Polskę daje prostokąt szerszy niż
@@ -178,12 +194,23 @@ export function ClusterMap() {
     instancja.on("resize", () => void odswiez());
     void odswiez();
 
+    // Znacznik wskazanego punktu jest osobny od siatki: siatka się przerysowuje
+    // przy każdym przesunięciu, a „to jest ta firma" ma zostać na ekranie.
+    if (wskazany) {
+      L.circleMarker(wskazany, {
+        radius: 13,
+        color: "#b91c1c",
+        weight: 3,
+        fill: false,
+      }).addTo(instancja);
+    }
+
     return () => {
       obserwator.disconnect();
       zadanie?.abort();
       instancja.remove();
     };
-  }, [L]);
+  }, [L, parametry]);
 
   return (
     <div>
@@ -226,40 +253,59 @@ function Pokrycie({ dane }: { dane: MapCoverage }) {
  * Dopiero pojedynczy adres ma o czym opowiadać.
  */
 function klikniecie(L: typeof import("leaflet"), mapa: LeafletMap, skupisko: MapCluster): void {
-  if (!skupisko.address_id) {
+  // Poziom zgrubny: skupisko to setki adresów, więc przybliżamy.
+  if (skupisko.label === null) {
     mapa.flyTo([skupisko.latitude, skupisko.longitude], Math.min(mapa.getZoom() + 3, 17));
     return;
   }
 
   const dymek = L.popup({ maxWidth: 340, maxHeight: 320 })
     .setLatLng([skupisko.latitude, skupisko.longitude])
-    .setContent(`<strong>${escapuj(skupisko.label ?? "Adres")}</strong><p>Wczytywanie…</p>`)
+    .setContent(`<strong>${escapuj(naglowek(skupisko))}</strong><p>Wczytywanie…</p>`)
     .openOn(mapa);
 
-  void api
-    .coLocated(skupisko.address_id)
+  void fetchAtPoint(skupisko.latitude, skupisko.longitude)
     .then((odpowiedz) => {
-      dymek.setContent(trescDymka(skupisko, odpowiedz.items, odpowiedz.meta.total));
+      dymek.setContent(trescDymka(skupisko, odpowiedz.items, odpowiedz.total));
     })
     .catch(() => {
       dymek.setContent(
-        `<strong>${escapuj(skupisko.label ?? "Adres")}</strong>` +
+        `<strong>${escapuj(naglowek(skupisko))}</strong>` +
           `<p>Nie udało się wczytać podmiotów pod tym adresem.</p>`,
       );
     });
 }
 
-function trescDymka(skupisko: MapCluster, podmioty: CoLocated[], razem: number | null): string {
-  const naglowek = `<strong>${escapuj(skupisko.label ?? "Adres")}</strong>`;
+/**
+ * Nagłówek dymka. Pod jednym punktem PRG stoi cały budynek, więc `label` jest
+ * nazwą **jednego** z adresów — w bloku myląco konkretną. Gdy jest ich więcej,
+ * mówimy to wprost, zamiast podawać cudzy numer mieszkania jako nagłówek.
+ */
+function naglowek(skupisko: MapCluster): string {
+  if (skupisko.addresses > 1) {
+    return `${skupisko.addresses} adresów pod tym punktem`;
+  }
+  return skupisko.label ?? "Adres";
+}
+
+function trescDymka(skupisko: MapCluster, podmioty: AtPoint[], razem: number): string {
+  const tytul = `<strong>${escapuj(naglowek(skupisko))}</strong>`;
   if (podmioty.length === 0) {
-    // Adres bez podmiotów istnieje: mógł zostać dodany przez scalanie albo
-    // wszystkie wpisy pod nim zostały wykreślone.
-    return `${naglowek}<p>Brak podmiotów zarejestrowanych pod tym adresem.</p>`;
+    // Punkt bez podmiotów istnieje: wpisy pod nim mogły zostać wykreślone.
+    return `${tytul}<p>Brak podmiotów zarejestrowanych pod tym punktem.</p>`;
   }
 
+  const wieleAdresow = skupisko.addresses > 1;
   const wiersze = podmioty
     .map((p) => {
-      const opisy = [p.nip ? `NIP ${p.nip}` : null, p.krs ? `KRS ${p.krs}` : null, p.status]
+      const opisy = [
+        // Przy wielu adresach pod punktem sam numer lokalu jest tym, co
+        // odróżnia jeden wpis od drugiego — bez niego lista jest nieczytelna.
+        wieleAdresow ? p.address : null,
+        p.nip ? `NIP ${p.nip}` : null,
+        p.krs ? `KRS ${p.krs}` : null,
+        p.status,
+      ]
         .filter(Boolean)
         .join(" · ");
       return (
@@ -270,11 +316,9 @@ function trescDymka(skupisko: MapCluster, podmioty: CoLocated[], razem: number |
     })
     .join("");
 
-  const brakuje = razem !== null && razem > podmioty.length ? razem - podmioty.length : 0;
-  const stopka = brakuje
-    ? `<p><a href="/entity/${skupisko.address_id}">Pokaż wszystkie ${razem}</a></p>`
-    : "";
-  return `${naglowek}<ul class="dymek">${wiersze}</ul>${stopka}`;
+  const brakuje = razem > podmioty.length ? razem - podmioty.length : 0;
+  const stopka = brakuje ? `<p>…i jeszcze ${brakuje} pod tym samym punktem.</p>` : "";
+  return `${tytul}<ul class="dymek">${wiersze}</ul>${stopka}`;
 }
 
 /**

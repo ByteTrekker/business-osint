@@ -639,3 +639,35 @@ class TestNazwaSpolkiCywilnej:
 
         # Granica jest przy dwóch znakach: „AB" to nazwa, „X" to resztka.
         assert nazwa_spolki_z_wpisu("JAN KOWALSKI wspólnik spółki cywilnej AB") == "AB"
+def test_pesel_is_hashed_before_a_document_is_ever_stored() -> None:
+    """Surowe dokumenty są niezmienne, więc jawny PESEL zapisany raz zostaje na zawsze."""
+    from business_osint.domain.normalization import pesel_hash, zahaszuj_pesele
+
+    payload = {
+        "result": {
+            "subjects": [
+                {"name": "FIRMA", "nip": "7740001454", "pesel": "44051401359"},
+                {"name": "INNA", "nip": "5842394781", "pesel": None},
+            ]
+        }
+    }
+
+    wynik = zahaszuj_pesele(payload, "pieprz")
+
+    podmioty = wynik["result"]["subjects"]
+    assert podmioty[0]["pesel"] == pesel_hash("44051401359", "pieprz")
+    assert "44051401359" not in str(wynik)
+    # Brak PESEL-u zostaje brakiem, a nie skrótem z pustego napisu.
+    assert podmioty[1]["pesel"] is None
+    # Reszta dokumentu nietknięta — inaczej suma kontrolna przestaje cokolwiek znaczyć.
+    assert podmioty[0]["nip"] == "7740001454"
+
+
+def test_unrecognisable_pesel_is_dropped_rather_than_kept_verbatim() -> None:
+    from business_osint.domain.normalization import zahaszuj_pesele
+
+    # Pole nazwane `pesel` z zawartością, której nie rozumiemy, jest ostatnią
+    # rzeczą, jaką chcemy zachować w oryginale.
+    wynik = zahaszuj_pesele({"pesel": "nie-pesel"}, "pieprz")
+
+    assert wynik["pesel"] is None

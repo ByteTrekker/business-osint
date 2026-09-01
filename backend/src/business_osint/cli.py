@@ -294,6 +294,11 @@ def import_gleif(
 @app.command("enrich-whitelist")
 def enrich_whitelist(
     limit: int = typer.Option(0, help="Ogranicz liczbę numerów NIP (0 = wszystkie)"),
+    after: str = typer.Option("", help="Wznów od NIP-u większego niż podany"),
+    scope: str = typer.Option(
+        "bridge",
+        help="bridge = tylko podmioty, które mogą mieć KRS; all = wszystkie NIP-y",
+    ),
 ) -> None:
     """Dopina REGON i KRS z białej listy VAT do podmiotów, które mają już NIP."""
     from business_osint.etl.whitelist_pipeline import WhitelistStats, enrich_identifiers
@@ -306,7 +311,9 @@ def enrich_whitelist(
         )
 
     stats, report = asyncio.run(
-        _with_data_check(enrich_identifiers(limit=limit or None, progress=show))
+        _with_data_check(
+            enrich_identifiers(limit=limit or None, after=after or None, scope=scope, progress=show)
+        )
     )
     typer.echo(f"\nBiała lista VAT: {stats.as_dict()}")
     _echo_data_check(report)

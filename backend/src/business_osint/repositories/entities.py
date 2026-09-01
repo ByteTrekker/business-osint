@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,16 @@ class SearchHit:
     score: float
     subtitle: str | None
     degree: int
+    #: Pola rozbite na osobne, a nie sklejone w podtytuł. Lista ma dać się
+    #: sortować po kolumnie, a z napisu „KRS 123 · NIP 456 · Gdańsk" nie da się
+    #: posortować po mieście.
+    nip: str | None = None
+    krs: str | None = None
+    status: str | None = None
+    city: str | None = None
+    voivodeship: str | None = None
+    registered_on: dt.date | None = None
+    pkd: str | None = None
 
 
 # Wyszukiwanie jest **etapowe**, a nie jednym zapytaniem trigramowym.
@@ -61,6 +72,36 @@ class SearchHit:
 # dobieranych z trzystu daje zapas na przetasowanie, a wciąż mieści się
 # w kilku milisekundach.
 _CANDIDATE_POOL = 300
+
+#: Ile trafień bierzemy pod uwagę przy sortowaniu innym niż trafność.
+#:
+#: Wyszukiwarka jest etapowa i **nie zna** pełnego zbioru dopasowań — dla
+#: prefiksu „a" jest ich 830 tys. i policzenie ich oznaczałoby przejście przez
+#: wszystkie. Sortowanie może więc uporządkować tylko to, co etapy zdążyły
+#: znaleźć. Bierzemy stałą, większą pulę i sortujemy ją w całości, zamiast
+#: przestawiać wiersze na jednej stronie i udawać, że to sortowanie zbioru.
+#: Kontrakt API mówi to wprost.
+_SORT_POOL = 200
+
+#: Klucze sortowania. Trafność jest kolejnością naturalną etapów i nie ma
+#: własnego klucza — nie ruszamy wtedy wierszy w ogóle.
+SORT_KEYS = ("relevance", "degree", "name", "registered", "city", "status")
+
+#: Klucze sortowania trafień. Wartości brakujące lądują na końcu niezależnie
+#: od kierunku — podmiot bez miasta nie jest „przed A", tylko nieznany.
+_PORZADKI: dict[str, Any] = {
+    "degree": lambda h: (-h.degree, (h.display_name or "").lower()),
+    "name": lambda h: (h.display_name or "").lower(),
+    "registered": lambda h: (h.registered_on is None, -_dni(h.registered_on)),
+    "city": lambda h: ((h.city or "").strip() == "", (h.city or "").lower()),
+    "status": lambda h: ((h.status or "").strip() == "", h.status or ""),
+}
+
+
+def _dni(data: dt.date | None) -> int:
+    """Data na liczbę, żeby dało się odwrócić kierunek jednym minusem."""
+    return data.toordinal() if data is not None else 0
+
 
 _RELEVANCE = """
     0.40 * LEAST(length(:normalized)::float8
@@ -123,7 +164,16 @@ def _name_stage(condition: str, base: float, span: float) -> Any:
         -- Filtr statusu **po** złączeniu, bo status mieszka w `companies`.
         -- Wciągnięcie go do podzapytania oznaczałoby złączenie na całej puli
         -- kandydatów zamiast na wycinku, który i tak przechodzi przez ranking.
-        WHERE CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text)
+        -- Województwo trzymamy w `companies.attributes`, bo pochodzi z CEIDG
+        -- i nie ma go dla podmiotów z pozostałych źródeł. Filtr jest więc
+        -- **zawężający**: włączenie go usuwa z wyniku wszystko, o czym nie
+        -- wiemy, gdzie jest — i tak ma być, bo pytanie brzmiało „w tym
+        -- województwie", a nie „może w tym województwie".
+        WHERE (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
+          AND (CAST(:voivodeship AS text) IS NULL
+               OR c.attributes ->> 'wojewodztwo' = CAST(:voivodeship AS text))
+          -- PKD po prefiksie: „62" to cała informatyka, „62.01.Z" jedna klasa.
+          AND (CAST(:pkd AS text) IS NULL OR c.pkd_main LIKE CAST(:pkd AS text) || '%')
         -- `e.id` na końcu nie jest ozdobnikiem: bez niego wiersze o równej
         -- trafności wracają w kolejności zależnej od planu, a wtedy przy
         -- stronicowaniu ten sam podmiot potrafi pojawić się dwa razy albo
@@ -181,12 +231,17 @@ _BY_TRIGRAM = text("""
       AND e.normalized_name % :normalized
       AND (CAST(:entity_type AS text) IS NULL OR e.entity_type = CAST(:entity_type AS text))
       AND (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
+      AND (CAST(:voivodeship AS text) IS NULL
+           OR c.attributes ->> 'wojewodztwo' = CAST(:voivodeship AS text))
+      AND (CAST(:pkd AS text) IS NULL OR c.pkd_main LIKE CAST(:pkd AS text) || '%')
     ORDER BY score DESC, e.degree DESC, e.id
     LIMIT :limit
 """)
 
 _ENRICH = text("""
-    SELECT e.id, c.nip, c.krs, c.status, a.city
+    SELECT e.id, c.nip, c.krs, c.status, c.registered_on, c.pkd_main,
+           c.attributes ->> 'wojewodztwo' AS wojewodztwo,
+           COALESCE(a.city, c.attributes ->> 'city') AS city
     FROM entities e
     LEFT JOIN companies c ON c.entity_id = e.id
     LEFT JOIN addresses a ON a.entity_id = e.id
@@ -204,6 +259,9 @@ class EntityRepository:
         *,
         entity_type: str | None = None,
         status: str | None = None,
+        voivodeship: str | None = None,
+        pkd: str | None = None,
+        sort: str = "relevance",
         limit: int = 20,
         offset: int = 0,
         fuzzy: bool = False,
@@ -228,7 +286,18 @@ class EntityRepository:
         """
         # Pobieramy o jeden więcej, niż zwrócimy: obecność tego wiersza jest
         # jedyną tanią odpowiedzią na pytanie „czy jest następna strona".
+        # PKD w bazie jest bez kropek (`6201Z`), a ludzie piszą je z kropkami
+        # (`62.01.Z`). Przyjmujemy obie postaci — inaczej połowa wpisanych
+        # numerów po cichu nie znajdowałaby nic.
+        if pkd:
+            pkd = pkd.replace(".", "").upper()
+
         needed = offset + limit + 1
+        # Sortowanie inne niż trafność wymaga zobaczenia większej puli, zanim
+        # cokolwiek uporządkujemy — inaczej „najwięcej powiązań" znaczyłoby
+        # tylko „najwięcej na tej stronie".
+        if sort != "relevance":
+            needed = max(needed, _SORT_POOL)
         cleaned = query.strip()
         if not cleaned:
             return [], False
@@ -257,6 +326,8 @@ class EntityRepository:
                 "prefix": f"{normalized}%",
                 "entity_type": entity_type,
                 "status": status,
+                "voivodeship": voivodeship,
+                "pkd": pkd,
                 # Pula kandydatów musi pomieścić stronę, do której schodzimy —
                 # inaczej przy większym przesunięciu ranking miałby z czego
                 # wybierać mniej, niż wynosi żądany wycinek.
@@ -274,7 +345,15 @@ class EntityRepository:
 
         # Nazwiska w CEIDG są zapisane wielkimi literami; szukamy ostatniego słowa,
         # bo użytkownik pisze „Jan Kowalski", a indeks stoi na samym nazwisku.
-        if len(rows) < needed and entity_type in (None, "person"):
+        # Przy filtrze województwa etap nazwiskowy odpada: encje osób nie mają
+        # województwa, więc każde jego trafienie zostałoby i tak odrzucone —
+        # a filtr jest zawężający, nie „może".
+        if (
+            len(rows) < needed
+            and entity_type in (None, "person")
+            and voivodeship is None
+            and pkd is None
+        ):
             surname = cleaned.split()[-1].upper()
             if len(surname) > 2:
                 take(
@@ -295,14 +374,24 @@ class EntityRepository:
                         "normalized": normalized,
                         "entity_type": entity_type,
                         "status": status,
+                        "voivodeship": voivodeship,
+                        "pkd": pkd,
                         "limit": needed,
                     },
                 )
             )
 
-        has_more = len(rows) > offset + limit
-        page = rows[offset : offset + limit]
-        return await self._to_hits(page), has_more
+        # Przy trafności wzbogacamy wyłącznie stronę: kolumny są wtedy tylko do
+        # pokazania. Przy każdym innym porządku sortujemy **po** wzbogaceniu,
+        # bo miasto, status i data rejestracji nie istnieją jeszcze w wierszach
+        # z etapów — a sortowanie po kolumnie, której nie ma, cicho nie zrobi nic.
+        if sort == "relevance" or sort not in _PORZADKI:
+            has_more = len(rows) > offset + limit
+            return await self._to_hits(rows[offset : offset + limit]), has_more
+
+        hits = await self._to_hits(rows)
+        hits.sort(key=_PORZADKI[sort])
+        return hits[offset : offset + limit], len(hits) > offset + limit
 
     async def co_located(
         self, entity_id: uuid.UUID, *, limit: int = 50, offset: int = 0
@@ -358,9 +447,21 @@ class EntityRepository:
                 score=float(row["score"]),
                 subtitle=self._subtitle(extra.get(row["id"])),
                 degree=row["degree"],
+                nip=self._pole(extra, row, "nip"),
+                krs=self._pole(extra, row, "krs"),
+                status=self._pole(extra, row, "status"),
+                city=self._pole(extra, row, "city"),
+                voivodeship=self._pole(extra, row, "wojewodztwo"),
+                registered_on=self._pole(extra, row, "registered_on"),
+                pkd=self._pole(extra, row, "pkd_main"),
             )
             for row in rows
         ]
+
+    @staticmethod
+    def _pole(extra: dict[uuid.UUID, Any], row: Any, nazwa: str) -> Any:
+        dodatki = extra.get(row["id"])
+        return dodatki.get(nazwa) if dodatki is not None else None
 
     @staticmethod
     def _subtitle(row: Any | None) -> str | None:

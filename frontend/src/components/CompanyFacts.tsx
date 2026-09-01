@@ -64,6 +64,8 @@ export function CompanyFacts({ profile }: { profile: EntityProfile }) {
   const address = [
     attr(profile, "city"),
     attr(profile, "gmina") !== attr(profile, "city") ? attr(profile, "gmina") : null,
+    // W miastach na prawach powiatu powiat powtarza nazwę miasta — wtedy milczy.
+    attr(profile, "powiat") !== attr(profile, "city") ? attr(profile, "powiat") : null,
     attr(profile, "wojewodztwo"),
   ].filter(Boolean);
 

@@ -19,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </Link>
           <nav className="topbar__nav">
             <Link href="/mapa">mapa</Link>
+            <Link href="/zrodla">źródła</Link>
           </nav>
           <span className="topbar__tag">dane z rejestrów publicznych</span>
         </header>
