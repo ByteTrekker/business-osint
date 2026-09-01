@@ -14,10 +14,11 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from business_osint.config import get_settings
 from business_osint.db.models import EntityIdentifier
 from business_osint.db.session import get_etl_sessionmaker
 from business_osint.domain.enums import IdentifierScheme, SourceKind
-from business_osint.domain.normalization import is_valid_krs, is_valid_regon
+from business_osint.domain.normalization import is_valid_krs, is_valid_regon, zahaszuj_pesele
 from business_osint.etl.fetching.errors import FetchError
 from business_osint.etl.loaders import store_raw_document
 from business_osint.etl.pipeline import get_or_create_source
@@ -27,27 +28,101 @@ from business_osint.etl.sources.mf_whitelist import (
     extract_identifier_bridges,
 )
 
+#: Po tylu nieudanych partiach z rzędu przerywamy przebieg.
+#:
+#: Pierwszy pełny przebieg „zakończył się powodzeniem" z wynikiem
+#: `errors: 118501`: po wyczerpaniu dziennego limitu MF (`WL-191`) pętla
+#: przemieliła wszystkie pozostałe partie, nie robiąc nic, i zameldowała
+#: sukces. Źródło, które przestało odpowiadać, ma zatrzymać przebieg — inaczej
+#: licznik błędów jest szumem, a nie sygnałem.
+MAX_KOLEJNYCH_BLEDOW = 20
+
+#: Do czego biała lista jest naprawdę potrzebna.
+#:
+#: `bridge` — wyłącznie podmioty, które **mogą** mieć numer KRS: mają NIP,
+#: nie mają jeszcze KRS-u i nie są jednoosobową działalnością z CEIDG.
+#: Jednoosobowa działalność nie ma numeru KRS z definicji, więc odpytywanie
+#: o nią mostu identyfikatorowego jest pracą bez możliwego wyniku.
+#:
+#: Pierwszy przebieg poszedł po wszystkich 3 560 269 numerach i to była pomyłka
+#: w planie, nie w kodzie: z 5 610 sprawdzonych NIP-ów KRS przybyło dla 105,
+#: czyli 1,9 procent. Zbiór `bridge` to 7 343 numery — 245 zapytań zamiast
+#: 118 676, czyli różnica między zadaniem na lata a na kilka minut.
+#:
+#: `all` zostaje, bo REGON przybywa także dla działalności jednoosobowych
+#: (55 procent trafień) — ale to jest osobny cel i osobna decyzja o koszcie.
+ZAKRESY = ("bridge", "all")
+
+# Dwa pełne zapytania zamiast jednego sklejanego z fragmentów. Sklejanie
+# działałoby tak samo, ale każdy czytający — i lintera też — musiałby najpierw
+# sprawdzić, skąd bierze się doklejany kawałek.
+_CELE = {
+    "bridge": text("""
+        SELECT i.value AS nip, i.entity_id
+        FROM entity_identifiers i
+        WHERE i.scheme = 'nip'
+          AND (CAST(:after AS text) IS NULL OR i.value > CAST(:after AS text))
+          AND NOT EXISTS (SELECT 1 FROM entity_identifiers k
+                          WHERE k.entity_id = i.entity_id AND k.scheme = 'krs')
+          AND NOT EXISTS (
+            SELECT 1 FROM relationships r
+            WHERE r.target_entity_id = i.entity_id
+              AND r.relationship_type = 'sole_proprietor_of'
+              AND r.superseded_at IS NULL)
+        ORDER BY i.value
+        LIMIT CAST(:limit AS bigint)
+    """),
+    "all": text("""
+        SELECT i.value AS nip, i.entity_id
+        FROM entity_identifiers i
+        WHERE i.scheme = 'nip'
+          AND (CAST(:after AS text) IS NULL OR i.value > CAST(:after AS text))
+        ORDER BY i.value
+        LIMIT CAST(:limit AS bigint)
+    """),
+}
+
 
 @dataclass(slots=True)
 class WhitelistStats:
     nips_checked: int = 0
+    #: Ostatni przetworzony NIP — punkt wznowienia po przerwaniu przebiegu.
+    last_nip: str = ""
     identifiers_added: int = 0
     vat_active: int = 0
     not_found: int = 0
     errors: int = 0
+    #: Wypełniane, gdy przebieg przerwano — puste znaczy „doszedł do końca".
+    aborted: str = ""
 
     def as_dict(self) -> dict[str, int]:
         return {
             "nips_checked": self.nips_checked,
+            "last_nip": self.last_nip,  # type: ignore[dict-item]
             "identifiers_added": self.identifiers_added,
             "vat_active": self.vat_active,
             "not_found": self.not_found,
             "errors": self.errors,
+            "aborted": self.aborted,  # type: ignore[dict-item]
         }
 
 
-async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) -> WhitelistStats:
-    """Dla każdego znanego NIP-u dopina REGON i KRS z białej listy."""
+async def enrich_identifiers(
+    *,
+    limit: int | None = None,
+    after: str | None = None,
+    scope: str = "bridge",
+    progress: Any = None,
+) -> WhitelistStats:
+    """Dla każdego znanego NIP-u dopina REGON i KRS z białej listy.
+
+    `after` wznawia przebieg od podanego NIP-u. Pełny przebieg to 118 676
+    zapytań i kilkanaście godzin; bez punktu wznowienia każde przerwanie
+    oznaczałoby zaczynanie od zera, co jest wprost sprzeczne z regułą warstwy
+    pobierania: przerwany przebieg wznawia się, nie startuje na nowo.
+    Kolejność po `value` jest stabilna, więc ostatni przetworzony NIP wystarczy
+    za cały stan.
+    """
     stats = WhitelistStats()
     factory = get_etl_sessionmaker()
     date = dt.date.today().isoformat()
@@ -56,31 +131,30 @@ async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) 
         # LIMIT jako parametr, nie sklejanie napisu: NULL oznacza brak limitu,
         # a zapytanie zostaje jedną, niezmienną stałą (bez ryzyka wstrzyknięcia).
         rows = await session.execute(
-            text(
-                """
-                SELECT i.value AS nip, i.entity_id
-                FROM entity_identifiers i
-                WHERE i.scheme = 'nip'
-                ORDER BY i.value
-                LIMIT CAST(:limit AS bigint)
-                """
-            ),
-            {"limit": limit},
+            _CELE[scope if scope in ZAKRESY else "bridge"],
+            {"limit": limit, "after": after},
         )
         targets = {row.nip: row.entity_id for row in rows}
 
     client = WhitelistClient()
     nips = list(targets)
+    pod_rzad = 0
     try:
         for start in range(0, len(nips), MAX_NIPS_PER_REQUEST):
             batch = nips[start : start + MAX_NIPS_PER_REQUEST]
             try:
                 document = await client.fetch_batch(batch, date=date)
-            except FetchError:
+            except FetchError as blad:
                 stats.errors += 1
+                pod_rzad += 1
+                if pod_rzad >= MAX_KOLEJNYCH_BLEDOW:
+                    stats.aborted = f"{MAX_KOLEJNYCH_BLEDOW} nieudanych partii z rzędu: {blad}"
+                    break
                 continue
+            pod_rzad = 0
 
             stats.nips_checked += len(batch)
+            stats.last_nip = batch[-1]
             async with factory() as session, session.begin():
                 source_id = await get_or_create_source(
                     session, SourceKind.MF_WHITELIST, "wl-api.mf.gov.pl", "https://wl-api.mf.gov.pl"
@@ -92,7 +166,13 @@ async def enrich_identifiers(*, limit: int | None = None, progress: Any = None) 
                     url=document.url,
                     fetched_at=document.fetched_at,
                     content_sha256=document.content_sha256,
-                    payload=document.payload,
+                    # Biała lista zwraca `pesel` osób fizycznych prowadzących
+                    # działalność. Haszujemy **przed** zapisem: `raw_documents`
+                    # są niezmienne, więc jawny PESEL zapisany tu raz zostaje
+                    # na zawsze. Suma kontrolna dotyczy odpowiedzi, jaką
+                    # dostaliśmy, więc liczymy ją przed podmianą — inaczej
+                    # przestałaby cokolwiek świadczyć o źródle.
+                    payload=zahaszuj_pesele(document.payload, get_settings().pesel_pepper),
                 )
                 for bridge in extract_identifier_bridges(document.payload):
                     entity_id = targets.get(bridge["nip"])
