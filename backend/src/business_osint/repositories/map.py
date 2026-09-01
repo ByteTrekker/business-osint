@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_osint.domain.map_grid import (
     LIMIT_KOMOREK,
+    SIATKA,
     SIATKA_BAZOWA,
     SZCZEGOL_OD,
     bok_komorki,
@@ -35,10 +36,9 @@ class Skupisko:
     longitude: float
     addresses: int
     entities: int
-    #: Wypełniane wyłącznie na poziomie szczegółowym, gdzie znacznik jest
-    #: pojedynczym adresem i da się o niego dopytać. Na poziomie zgrubnym
-    #: skupisko obejmuje setki adresów i żaden identyfikator nie byłby prawdziwy.
-    address_id: uuid.UUID | None = None
+    #: Wypełniana wyłącznie na poziomie szczegółowym. Gdy pod jednym punktem
+    #: jest więcej adresów, jest to nazwa jednego z nich — liczba w `addresses`
+    #: mówi, ilu dotyczy naprawdę.
     label: str | None = None
 
 
@@ -75,21 +75,66 @@ _SKUPISKA = text("""
     LIMIT :limit
 """)
 
+# Grupowanie po współrzędnych, nie po wierszu adresu. W bloku mieszkalnym każdy
+# lokal jest osobnym adresem, a PRG daje im wszystkim jeden punkt budynku —
+# znaczniki nakładały się co do piksela i klikalny był wyłącznie wierzchni.
+# 209 836 punktów zbiera 678 217 adresów, więc pod cudzym znacznikiem znikało
+# 468 381 adresów: ćwierć wszystkiego, co mapa w ogóle pokazuje. Najgorszy punkt
+# ma 151 adresów.
+#
+# Bez `ORDER BY` po stopniu. Sortowanie malejąco po stopniu wyglądało
+# niewinnie, a znaczyło: **przy przycięciu znikają najpierw najmniejsi**.
+# Jednoosobowa działalność ma stopień 1, więc wypadała zawsze pierwsza —
+# mapa po cichu ukrywała dokładnie tę część bazy, która stanowi jej większość.
+# Kolejność jest teraz dowolna, bo przy przekroczeniu limitu i tak nie
+# pokazujemy punktów, tylko wracamy do siatki (patrz `_punkty`).
+#
 # Poziom szczegółowy zwraca **identyfikator adresu**, bo dopiero tu znacznik
 # odpowiada jednemu bytowi, o który da się dopytać. Klient używa go potem do
 # `/entities/{id}/co-located` — nie dublujemy tu listy podmiotów, bo pod jednym
 # adresem potrafi ich siedzieć 456 i ładowanie ich dla każdego widocznego
 # znacznika byłoby setkami wierszy na zapas.
 _PUNKTY = text("""
-    SELECT a.entity_id AS id, e.display_name AS etykieta,
-           a.latitude AS la, a.longitude AS lo, 1 AS adresow, e.degree AS podmiotow
+    SELECT a.latitude AS la, a.longitude AS lo,
+           count(*) AS adresow,
+           COALESCE(sum(e.degree), 0) AS podmiotow,
+           min(e.display_name) AS etykieta
     FROM addresses a
     JOIN entities e ON e.id = a.entity_id AND e.merged_into_id IS NULL
     WHERE a.latitude IS NOT NULL
       AND a.latitude BETWEEN :south AND :north
       AND a.longitude BETWEEN :west AND :east
-    ORDER BY e.degree DESC
+    GROUP BY a.latitude, a.longitude
     LIMIT :limit
+""")
+
+# Podmioty pod jednym punktem — czyli pod wszystkimi adresami o tych samych
+# współrzędnych. `co-located` odpowiada na węższe pytanie: pod jednym **wpisem
+# adresowym**. Dla bloku to jest różnica między „kto siedzi w tym mieszkaniu"
+# a „kto siedzi w tym budynku", i mapa pyta o to drugie.
+_POD_PUNKTEM = text("""
+    SELECT e.id, e.entity_type, e.display_name, e.degree,
+           c.nip, c.krs, c.status, adr.display_name AS adres
+    FROM addresses a
+    JOIN entities adr ON adr.id = a.entity_id AND adr.merged_into_id IS NULL
+    JOIN relationships r ON r.target_entity_id = a.entity_id
+                        AND r.relationship_type = 'registered_at'
+                        AND r.superseded_at IS NULL
+    JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
+    LEFT JOIN companies c ON c.entity_id = e.id
+    WHERE a.latitude = :lat AND a.longitude = :lon
+    ORDER BY e.degree DESC, e.display_name
+    LIMIT :limit OFFSET :offset
+""")
+
+_POD_PUNKTEM_ILE = text("""
+    SELECT count(*)
+    FROM addresses a
+    JOIN relationships r ON r.target_entity_id = a.entity_id
+                        AND r.relationship_type = 'registered_at'
+                        AND r.superseded_at IS NULL
+    JOIN entities e ON e.id = r.source_entity_id AND e.merged_into_id IS NULL
+    WHERE a.latitude = :lat AND a.longitude = :lon
 """)
 
 
@@ -160,31 +205,62 @@ class MapRepository:
         )
 
     async def _punkty(self, *, south: float, north: float, west: float, east: float) -> WycinekMapy:
+        """Pojedyncze adresy — o ile mieszczą się w limicie w całości.
+
+        Jeżeli się nie mieszczą, **wracamy do siatki** zamiast obciąć listę.
+        Obcięcie musiałoby coś porzucić, a każde kryterium wyboru jest tu
+        kłamstwem o zawartości okna: sortowanie po stopniu ukrywało jednoosobowe
+        działalności, a losowe obcięcie ukrywałoby je równie skutecznie, tylko
+        mniej przewidywalnie. Siatka nie gubi nikogo — każdy adres jest w jakiejś
+        komórce policzony — a `cell_degrees` mówi klientowi, który tryb dostał.
+        """
         params: dict[str, Any] = {
             "south": south,
             "north": north,
             "west": west,
             "east": east,
-            "limit": LIMIT_KOMOREK,
+            # O jeden więcej, niż wolno pokazać: inaczej nie da się odróżnić
+            # „dokładnie tyle" od „więcej, niż się zmieści".
+            "limit": LIMIT_KOMOREK + 1,
         }
         rows = (await self._session.execute(_PUNKTY, params)).mappings().all()
+        if len(rows) > LIMIT_KOMOREK:
+            return await self._skupiska(
+                south=south, north=north, west=west, east=east, zoom=max(SIATKA)
+            )
         return WycinekMapy(
             clusters=[self._skupisko(row) for row in rows],
             cell_degrees=None,
-            truncated=len(rows) >= LIMIT_KOMOREK,
+            truncated=False,
         )
 
     @staticmethod
     def _skupisko(row: Any) -> Skupisko:
-        identyfikator = row.get("id")
         return Skupisko(
             latitude=float(row["la"]),
             longitude=float(row["lo"]),
             addresses=int(row["adresow"]),
             entities=int(row["podmiotow"]),
-            address_id=identyfikator if isinstance(identyfikator, uuid.UUID) else None,
             label=row.get("etykieta"),
         )
+
+    async def at_point(
+        self, *, lat: float, lon: float, limit: int, offset: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Podmioty pod wszystkimi adresami o tych współrzędnych.
+
+        Współrzędne idą jako `Decimal`, nie jako `float`. Kolumny są typu
+        `numeric(9,6)`, a asyncpg zakodowałby liczbę zmiennoprzecinkową w jej
+        pełnym rozwinięciu binarnym: `54.37967199999999…` nie równa się
+        `54.379672` i zapytanie zwraca **zero wierszy bez żadnego błędu**.
+        Ta sama pułapka co przy `COPY` w imporcie PRG.
+        """
+        params: dict[str, Any] = {"lat": Decimal(str(lat)), "lon": Decimal(str(lon))}
+        ile = int((await self._session.execute(_POD_PUNKTEM_ILE, params)).scalar_one())
+        rows = (
+            await self._session.execute(_POD_PUNKTEM, {**params, "limit": limit, "offset": offset})
+        ).mappings()
+        return [dict(row) for row in rows], ile
 
     async def coverage(self) -> Pokrycie:
         """Metadane zbioru — nie na ścieżce przesuwania mapy, patrz `api/v1/map`."""

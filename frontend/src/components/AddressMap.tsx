@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 interface Location {
@@ -73,6 +74,10 @@ export function AddressMap({ entityId }: { entityId: string }) {
       />
       <p className="hint">
         {location.label} ·{" "}
+        <Link href={`/mapa?lat=${location.latitude}&lon=${location.longitude}`}>
+          pokaż na mapie firm
+        </Link>{" "}
+        ·{" "}
         <a
           href={`https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=17/${location.latitude}/${location.longitude}`}
           rel="noreferrer noopener"

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { ClusterMap } from "@/components/ClusterMap";
 
@@ -15,7 +16,9 @@ export default function MapaPage() {
         Skupiska adresów zarejestrowanych podmiotów. Przybliż, żeby rozdzielić grupę na mniejsze; od
         czternastego poziomu widać pojedyncze adresy. <Link href="/">Wróć do wyszukiwarki</Link>.
       </p>
-      <ClusterMap />
+      <Suspense fallback={<div className="clustermap" />}>
+        <ClusterMap />
+      </Suspense>
     </>
   );
 }
