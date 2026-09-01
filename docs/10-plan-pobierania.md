@@ -1,26 +1,88 @@
 # Plan pobierania z nowych źródeł
 
-Kolejność i uzasadnienie dla źródeł, których jeszcze nie mamy. Wszystko poniżej
-sprawdzone zapytaniem 2026-09-01 — jeżeli czegoś nie sprawdziłem, jest to
-napisane wprost.
+Kolejność i uzasadnienie dla źródeł, których jeszcze nie mamy. Wszystko
+sprawdzone zapytaniem — czego nie sprawdziłem, jest napisane wprost.
 
 Stan wyjściowy: [02-zrodla-danych.md](02-zrodla-danych.md). Odporność pobierania
 i szacunki kosztu: [07-pobieranie-danych.md](07-pobieranie-danych.md).
 
 ---
 
-## Kolejność
+## Liczba, która układa ten plan
 
-| # | źródło | co odblokowuje | blokada |
-|---|---|---|---|
-| 1 | **biała lista VAT** | mapowanie NIP ↔ KRS ↔ REGON dla całej bazy | brak |
-| 2 | **spółki cywilne z CEIDG** | pierwsze powiązania osoba–osoba | brak |
-| 3 | **KRS masowo** | zarządy, wspólnicy, historia (nazwiska zamaskowane) | opinia prawna do art. 60a |
-| 4 | **CRBR** | beneficjenci rzeczywiści z nazwiskami | model „na żądanie", nie kopia rejestru |
-| 5 | **KRZ** | upadłości, zakazy prowadzenia działalności | brak API — do zbadania |
-| 6 | **MSiG** | nazwiska bez maskowania, masowo | opinia prawna, patrz 02 |
+| rodzaj krawędzi | ile | udział |
+|---|---:|---:|
+| `sole_proprietor_of` — własna działalność, 1:1 | 3 552 839 | 54,9% |
+| `registered_at` — adres | 2 892 400 | 44,7% |
+| `parent_of` — spółka–spółka (GLEIF) | 21 306 | 0,3% |
+| `contractor_of` — zamówienia (BZP) | 124 | 0,0% |
 
-Punkty 1 i 2 nie mają blokad i nie wymagają nowych decyzji. Reszta wymaga.
+**16 182 podmioty z 3,6 mln** mają jakiekolwiek powiązanie, które nie jest
+„moja własna działalność" albo „mój adres". To jest **0,45%**.
+
+Projekt odpowiada na pytanie „jak ta firma jest powiązana z innymi firmami
+i osobami". Dla 99,5% bazy odpowiedź brzmi dziś: **przez adres, albo wcale.**
+
+Dlatego plan nie jest uszeregowany po koszcie, tylko po tym, **czy źródło
+dokłada krawędzie odpowiadające na to pytanie**. To rozróżnienie zmienia
+kolejność, bo dwa najtańsze źródła nie dokładają ich wcale.
+
+---
+
+## Podział: co buduje graf, a co jest hydrauliką
+
+### Buduje graf
+
+| źródło | jakie krawędzie | blokada |
+|---|---|---|
+| **BZP — pełne archiwum** | zamawiający ↔ wykonawca, oba z NIP-em | **brak** |
+| **Spółki cywilne z CEIDG** | osoba ↔ osoba | **brak** |
+| **KRS masowo** | organ → spółka (nazwiska zamaskowane), wspólnik → spółka | opinia prawna, art. 60a |
+| **CRBR** | beneficjent rzeczywisty → spółka | model na żądanie |
+| **MSiG** | osoba → spółka, **z nazwiskami** | opinia prawna |
+
+### Hydraulika — zero krawędzi
+
+| źródło | co daje | po co |
+|---|---|---|
+| **Biała lista VAT** | NIP ↔ KRS ↔ REGON, rachunki | bez tego nie wiadomo, o które spółki pytać KRS |
+| **REGON / BIR1** | podmioty bez NIP-u, PKD | pokrycie i klasyfikacja branżowa |
+| **KRZ** | upadłości, zakazy | sygnał ryzyka, atrybut nie krawędź |
+
+To rozróżnienie nie deprecjonuje hydrauliki: most identyfikatorowy jest
+warunkiem wejścia do KRS-u. Ale trzeba je nazwać, bo „zrobiliśmy białą listę
+i REGON" brzmi jak postęp w budowie grafu, a nim nie jest.
+
+---
+
+## Co robić teraz, bez żadnej decyzji
+
+Dwie rzeczy są odblokowane i obie dokładają krawędzie.
+
+**BZP — pełne archiwum.** To jedyne niezablokowane źródło, które buduje graf na
+skalę. Mamy 47 ogłoszeń i 124 krawędzie; archiwum idzie wstecz o lata. API jest
+publiczne, bez klucza, naturalnie przyrostowe (schodzimy po dacie publikacji do
+tej, którą już mamy), a pole `contractors` niesie wykonawców z NIP-em.
+Ograniczenie: **API oddaje 10 rekordów na stronę** niezależnie od `PageSize`,
+więc rok danych to rzędu kilkudziesięciu tysięcy zapytań — kilka godzin przy
+dwóch na sekundę. Klient i mapper już istnieją; brakuje przebiegu wstecz.
+
+**Spółki cywilne z CEIDG.** 3 328 wpisów, dane już w `raw_documents`, zero
+ruchu sieciowego, zero nowego ryzyka. Jedyne dziś dostępne powiązanie
+osoba–osoba.
+
+---
+
+## Co wymaga jednej Twojej decyzji
+
+**Klucz do REGON/BIR1** — wniosek mailem na `regon_bir@stat.gov.pl`. Tego nie
+zrobię za Ciebie. Limity są hojne: **10 000 zapytań na godzinę, 200 na minutę,
+4 na sekundę**, a ich przekroczenie „nie skutkuje natychmiastową blokadą".
+To jest zupełnie inna liga niż dzienna kwota MF.
+
+**Opinia prawna** — obejmuje naraz KRS masowo (art. 60a) i MSiG. Jedno pytanie
+do prawnika odblokowuje dwa najgrubsze źródła krawędzi osobowych. Dopóki go
+nie ma, oba stoją i nie ma sensu ich planować w szczegółach.
 
 ---
 
@@ -55,7 +117,7 @@ przebiegu na wiele dni. **Adresu pliku zbiorczego nie potwierdziłem.**
 
 ---
 
-## 1. Biała lista VAT — najpierw, bo jest kręgosłupem
+## Biała lista VAT — hydraulika, ale warunek wejścia do KRS-u
 
 To źródło było na liście jako „status VAT i rachunki bankowe". Sprawdzenie
 pokazało coś ważniejszego: **odpowiedź zawiera `nip`, `regon` i `krs` naraz**.
@@ -107,7 +169,7 @@ zapisem, także do `raw_documents`.
 
 ---
 
-## 2. Spółki cywilne z CEIDG — pierwsze powiązanie osoba–osoba
+## Spółki cywilne z CEIDG — pierwsze powiązanie osoba–osoba
 
 3 328 wpisów oznaczonych jako „działalność prowadzona wyłącznie w formie spółki
 cywilnej". Dane już pobrane, pole dziś nieczytane.
@@ -123,7 +185,7 @@ wyłącznie relabelingiem.
 
 ---
 
-## 3. KRS masowo — wartościowy mimo maskowania
+## KRS masowo — wartościowy mimo maskowania
 
 Nazwiska są zamaskowane i to jest przesądzone ([02](02-zrodla-danych.md)).
 Ale odpis daje bez nazwisk: formę prawną, kapitał zakładowy, PKD, adres,
@@ -153,7 +215,7 @@ ustawy o KRS. Stan bez zmian.
 
 ---
 
-## 4. CRBR — na żądanie, nie kopia rejestru
+## CRBR — na żądanie, nie kopia rejestru
 
 API jest publiczne: `POST https://crbr.podatki.gov.pl/adcrbr/api/wyszukajSpolke`,
 odpowiada ustrukturyzowanym błędem, więc istnieje i przyjmuje NIP. **Nie udało
@@ -174,10 +236,10 @@ a nie kto jest wpisany do zarządu.
 
 ---
 
-## 5. KRZ — do zbadania, nie do zaplanowania
+## KRZ — atrybut ryzyka, nie krawędź
 
-`krz.ms.gov.pl` odpowiada, portal jest publiczny i bez logowania. **Nie zbadałem
-jego API.** Nie potrafię dziś podać ani wolumenu, ani formatu, ani
+`krz.ms.gov.pl` odpowiada przekierowaniem, portal jest publiczny i bez
+logowania. **Nie zbadałem jego API.** Nie potrafię dziś podać ani wolumenu, ani formatu, ani
 przyrostowości, więc nie ma tu planu — jest zadanie rozpoznawcze.
 
 Wartość jest oczywista i inna niż reszty: upadłości, restrukturyzacje i zakazy
@@ -186,7 +248,7 @@ w grafie.
 
 ---
 
-## 6. MSiG — ostatni, bo najpierw prawnik
+## MSiG — ostatni, bo najpierw prawnik
 
 Technicznie gotowe do wzięcia: każdy numer od 1996 jako PDF, około 250 numerów
 rocznie po 0,5–2 MB, w numerze 1/2026 zero maskowania i 36 jawnych PESEL-i.
@@ -196,6 +258,24 @@ Kolejność jest tu celowa. MSiG jest jedyną znaną drogą do masowej warstwy
 `osoba → spółka`, więc pokusa, żeby wziąć go najpierw, jest największa — i to
 jest dokładnie powód, żeby zrobić go ostatni. Pięć punktów wyżej daje wartość
 bez otwierania pytania, na które nie mamy odpowiedzi.
+
+---
+
+## REGON / BIR1 — limity, które warto znać
+
+Sprawdzone w dokumentacji `api.stat.gov.pl` 2026-09-01:
+
+* klucz użytkownika **na wniosek mailem** na `regon_bir@stat.gov.pl`, bezpłatny;
+* **10 000 zapytań na godzinę, 200 na minutę, 4 na sekundę**;
+* przekroczenie limitów „nie skutkuje natychmiastową blokadą dostępu" —
+  usługobiorca zostaje poinformowany.
+
+Przy 10 tys. na godzinę pełny przebieg po 3,5 mln podmiotów to około dwóch
+tygodni ciągłej pracy. Do rozważenia razem z pytaniem, czy REGON jest nam
+potrzebny dla **całej** bazy, czy tylko tam, gdzie brakuje identyfikatorów.
+
+Nie sprawdziłem, czy BIR1 ma operacje zbiorcze zwracające wiele podmiotów
+w jednej odpowiedzi — jeżeli ma, powyższy szacunek spada odpowiednio.
 
 ---
 
