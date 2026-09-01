@@ -100,3 +100,57 @@ def iter_report_rows(payload: bytes) -> Iterator[dict[str, Any]]:
             # utf-8-sig: pliki mają BOM, przez który pierwsza kolumna nazywałaby się "﻿Lp."
             text = io.TextIOWrapper(handle, encoding="utf-8-sig", newline="")
             yield from csv.DictReader(text, delimiter=";")
+
+
+#: Pojedynczy wpis CEIDG. **Tylko ten punkt zwraca pole `spolki`** —
+#: odpowiednik zbiorczy `/firmy` przyjmuje do pięciu NIP-ów naraz, ale
+#: `spolki` w nim nie ma, więc partia niczego by nie przyspieszyła.
+FIRMA_URL = f"{BASE_URL}/firma"
+
+
+class CeidgEntryClient:
+    """Odczyt pojedynczych wpisów CEIDG po numerze NIP.
+
+    Istnieje wyłącznie po to, żeby dostać `spolki` — listę spółek cywilnych,
+    w których wpis uczestniczy. Raport zbiorczy ma 24 kolumny i **żadna nie
+    identyfikuje spółki**: `StatusDzialalnosci` mówi tylko, że ktoś działa
+    wyłącznie w tej formie, nie mówi z kim. Bez tego punktu nie da się
+    zbudować krawędzi między wspólnikami.
+    """
+
+    def __init__(self, token: str, client: httpx.AsyncClient | None = None) -> None:
+        self._client = client or httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            headers={
+                "Authorization": f"Bearer {token.strip()}",
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+            },
+            follow_redirects=True,
+        )
+
+    async def fetch(self, nip: str) -> dict[str, Any] | None:
+        """Wpis dla numeru NIP albo ``None``, gdy rejestr go nie zna."""
+        response = await self._client.get(FIRMA_URL, params={"nip": nip})
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        firma = response.json().get("firma")
+        if isinstance(firma, list):
+            return firma[0] if firma else None
+        return firma if isinstance(firma, dict) else None
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
+def spolki_z_wpisu(firma: dict[str, Any] | None) -> list[tuple[str, str]]:
+    """Pary (NIP, REGON) spółek cywilnych z wpisu. Bez NIP-u para jest bezużyteczna."""
+    if not firma:
+        return []
+    wynik = []
+    for spolka in firma.get("spolki") or []:
+        nip = str(spolka.get("nip") or "").strip()
+        if nip:
+            wynik.append((nip, str(spolka.get("regon") or "").strip()))
+    return wynik

@@ -170,6 +170,35 @@ def refresh_map() -> None:
     typer.echo(f"Siatka mapy: {komorek:,} komorek.")
 
 
+@app.command("import-partnerships")
+def import_partnerships_cmd(
+    limit: int = typer.Option(0, help="Ogranicz liczbę wpisów (0 = wszystkie)"),
+    after: str = typer.Option("", help="Wznów od NIP-u większego niż podany"),
+) -> None:
+    """Dopina wspólników spółek cywilnych z CEIDG.
+
+    Jedyne dostępne dziś źródło krawędzi osoba–osoba. NIP spółki jest wyłącznie
+    w pojedynczym wpisie `/firma`, nie w raporcie zbiorczym.
+    """
+    from business_osint.etl.partnership_pipeline import PartnershipStats, import_partnerships
+
+    def show(stats: PartnershipStats) -> None:
+        if stats.checked % 50 == 0:
+            typer.echo(
+                f"  sprawdzone: {stats.checked:,}  spolki: {stats.partnerships_created:,}"
+                f"  krawedzie: {stats.edges_created:,}\r",
+                nl=False,
+            )
+
+    stats, report = asyncio.run(
+        _with_data_check(
+            import_partnerships(limit=limit or None, after=after or None, progress=show)
+        )
+    )
+    typer.echo(f"\nSpolki cywilne: {stats.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(
