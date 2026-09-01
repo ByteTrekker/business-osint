@@ -193,7 +193,7 @@ zamiast zgadywania w jedną albo drugą stronę.
 * `map_grid.py` — arytmetyka siatki mapy (patrz rozdział 7).
 * `registry_values.py` — słowniki wartości z rejestrów: formy prawne, statusy.
 * `graph_shape.py` — zwijanie węzłów, które powtarzają informację.
-* `map_grid.py` — arytmetyka siatki mapy (patrz §7).
+* `map_grid.py` — arytmetyka siatki mapy (patrz rozdział 7).
 * `registry_values.py` — słowniki wartości z rejestrów.
 
 ---
