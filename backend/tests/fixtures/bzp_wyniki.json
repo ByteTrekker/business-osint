@@ -1,0 +1,88 @@
+{
+  "items": [
+    {
+      "pdfUrl": null,
+      "userId": "fd4d1827-c055-4da3-9300-3edc4304116e",
+      "cpvCode": "79311200-9 (Usługi przeprowadzania badań ankietowych)",
+      "htmlBody": null,
+      "objectId": "08df06c2-522f-e66a-ab56-9400018564d9",
+      "outdated": false,
+      "tenderId": "ocds-148610-93af4455-d90f-49d1-aea3-53c9958f096a",
+      "bzpNumber": "2026/BZP 00413255",
+      "orderType": "Services",
+      "clientType": "1.1.2",
+      "noticeType": "TenderResultNotice",
+      "tenderType": "1.1.1",
+      "contractors": [
+        {
+          "contractorCity": "Leszno",
+          "contractorName": "Centrum Badań Terenowych Radosław Meissner",
+          "contractorCountry": "PL",
+          "contractorProvince": null,
+          "contractorNationalId": "6981666657"
+        }
+      ],
+      "orderObject": "Badanie napełnienia pojazdów i struktury pasażerów na liniach obsługujących gminy ościenne",
+      "moIdentifier": "08df06c1-e0e7-5aa7-68d1-7000014f1c32",
+      "noticeNumber": "2026/BZP 00413255/01",
+      "noticeTypeTed": null,
+      "organizationId": "11326",
+      "procedureResult": "zawarcieUmowy",
+      "publicationDate": "2026-08-30T18:12:57.9337318Z",
+      "organizationCity": "Gdynia",
+      "organizationName": "Zarząd Komunikacji Miejskiej w Gdyni",
+      "bzpTenderPlanNumber": null,
+      "organizationCountry": "PL",
+      "organizationProvince": "PL22",
+      "submittingOffersDate": null,
+      "isTenderAmountBelowEU": true,
+      "noticeTypeDisplayName": null,
+      "baseNoticeMOIdentifier": null,
+      "organizationNationalId": "5861051214",
+      "isManuallyLinkedWithTender": false,
+      "technicalNoticeMOIdentifier": null
+    },
+    {
+      "pdfUrl": null,
+      "userId": "a01fd297-dd65-4101-81b3-4714c022758f",
+      "cpvCode": "45000000-7 (Roboty budowlane),45100000-8 (Przygotowanie terenu pod budowę),45110000-1 (Roboty w zakresie burzenia i rozbiórki obiektów budowlanych; roboty ziemne),45200000-9 (Roboty budowlane w zakresie wznoszenia kompletnych obiektów budowlanych lub ich części oraz roboty w zakresie inżynierii lądowej i wodnej),45262310-7 (Zbrojenie),45400000-1 (Roboty wykończeniowe w zakresie obiektów budowlanych),45261000-4 (Wykonywanie pokryć i konstrukcji dachowych oraz podobne roboty),45410000-4 (Tynkowanie),45500000-2 (Wynajem maszyn i urządzeń wraz z obsługą operatorską do prowadzenia robót z zakresu budownictwa oraz inżynierii wodnej i lądowej),45442000-7 (Nakładanie powierzchni kryjących),45310000-3 (Roboty instalacyjne elektryczne),45453000-7 (Roboty remontowe i renowacyjne)",
+      "htmlBody": null,
+      "objectId": "08df06c1-7296-4cb9-ab56-9400018564d8",
+      "outdated": false,
+      "tenderId": "ocds-148610-eefcb0fb-2b92-415e-a9a3-bd38f35bab37",
+      "bzpNumber": "2026/BZP 00413254",
+      "orderType": "Works",
+      "clientType": "1.1.6",
+      "noticeType": "AgreementUpdateNotice",
+      "tenderType": "1.1.1",
+      "contractors": [
+        {
+          "contractorCity": "Wrocław",
+          "contractorName": "Przedsiębiorstwo Budowlane SAWREM Sp. z o.o., Sp.k.",
+          "contractorCountry": "PL",
+          "contractorProvince": "PL02",
+          "contractorNationalId": "8992823067"
+        }
+      ],
+      "orderObject": "Legnica – Rewitalizacja zabytkowej Bramy Chojnowskiej w Legnicy (XV w.) - Etap I",
+      "moIdentifier": "08defcee-27d7-6418-68d1-700001d6bf84",
+      "noticeNumber": "2026/BZP 00413254/01",
+      "noticeTypeTed": null,
+      "organizationId": "2255",
+      "procedureResult": null,
+      "publicationDate": "2026-08-30T18:06:43.0684162Z",
+      "organizationCity": "Legnica",
+      "organizationName": "ZARZĄD GOSPODARKI MIESZKANIOWEJ",
+      "bzpTenderPlanNumber": null,
+      "organizationCountry": "PL",
+      "organizationProvince": "PL02",
+      "submittingOffersDate": null,
+      "isTenderAmountBelowEU": true,
+      "noticeTypeDisplayName": null,
+      "baseNoticeMOIdentifier": null,
+      "organizationNationalId": "6910205475",
+      "isManuallyLinkedWithTender": false,
+      "technicalNoticeMOIdentifier": null
+    }
+  ]
+}

@@ -3,6 +3,11 @@
 Z ogłoszenia o wyniku wyciągamy dwie strony: zamawiającego i wykonawcę, obu
 z numerem NIP. To jest jedyne źródło w projekcie, które łączy podmiot publiczny
 z firmą — i jedyne, które daje firmy spoza rejestru LEI.
+
+**Czego w tym API nie ma: wartości zamówienia.** Kwota jest w treści ogłoszenia,
+czyli w PDF-ie pod `pdfUrl`. Zapisujemy więc sam odnośnik — parsowanie PDF-a to
+osobna decyzja, a link bez kwoty jest wciąż lepszy niż nic, bo prowadzi
+człowieka do źródła.
 """
 
 from __future__ import annotations
@@ -74,15 +79,50 @@ def parse_notices(payload: dict[str, Any]) -> ParsedDocument:
                     # publikacji jest jednocześnie początkiem i końcem okresu.
                     valid_from=published,
                     valid_to=published,
-                    attributes={
-                        "notice_number": notice.get("noticeNumber"),
-                        "order_object": (notice.get("orderObject") or "")[:500],
-                        "cpv": notice.get("cpvCode"),
-                    },
+                    attributes=_atrybuty(notice),
                     locator=f"bzp/{notice.get('noticeNumber')}",
                 )
             )
     return result
+
+
+#: Pola ogłoszenia, które przepisujemy wprost. Odpowiedź niesie ich trzydzieści
+#: kilka; te są tym, co da się wykorzystać bez sięgania po treść ogłoszenia.
+#:
+#: `notice_type_ted` jest tu najważniejszy mimo niepozornej nazwy: to numer tego
+#: samego postępowania w TED. Gdy dojdzie integracja z TED, będzie gotowym
+#: łącznikiem — bez niego trzeba by je zestawiać po nazwie zamawiającego i dacie.
+_PRZEPISYWANE = {
+    "notice_number": "noticeNumber",
+    "notice_type": "noticeType",
+    "notice_type_ted": "noticeTypeTed",
+    "cpv": "cpvCode",
+    "order_type": "orderType",
+    "client_type": "clientType",
+    "tender_id": "tenderId",
+    "procedure_result": "procedureResult",
+    "offers_deadline": "submittingOffersDate",
+    "pdf_url": "pdfUrl",
+    "buyer_province": "organizationProvince",
+    "below_eu_threshold": "isTenderAmountBelowEU",
+}
+
+
+def _atrybuty(notice: dict[str, Any]) -> dict[str, Any]:
+    """Atrybuty krawędzi z ogłoszenia — bez pustych, żeby nie zaśmiecać JSON-a."""
+    wynik: dict[str, Any] = {
+        klucz: notice.get(pole)
+        for klucz, pole in _PRZEPISYWANE.items()
+        if notice.get(pole) not in (None, "")
+    }
+    # Przedmiot zamówienia bywa długi; przycinamy, bo to opis, a nie dana
+    # do porównywania — i mówimy o tym w nazwie klucza.
+    przedmiot = (notice.get("orderObject") or "").strip()
+    if przedmiot:
+        wynik["order_object"] = przedmiot[:500]
+        if len(przedmiot) > 500:
+            wynik["order_object_truncated"] = True
+    return wynik
 
 
 def _entity_from(name: str, nip: str, *, city: str | None = None) -> ParsedEntity | None:
