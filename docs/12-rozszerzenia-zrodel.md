@@ -63,7 +63,7 @@ identyfikatorowy, jaki mamy.
 
 ## 2. REGON / BIR GUS — nie mamy wcale
 
-Zero integracji. 2 890 REGON-ów w bazie pochodzi z białej listy VAT, nie z GUS.
+Zero integracji. 5 951 REGON-ów w bazie pochodzi z białej listy VAT, nie z GUS.
 
 **Sprawdzone w dokumentacji `api.stat.gov.pl`:** klucz na wniosek mailem
 (`regon_bir@stat.gov.pl`, bezpłatny), limity **10 000/godz., 200/min, 4/s**,
