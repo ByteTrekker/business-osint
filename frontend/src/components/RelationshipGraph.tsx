@@ -164,6 +164,20 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
     });
     cyRef.current = cy;
 
+    // Cytoscape mierzy kontener przy tworzeniu i przy uruchamianiu układu.
+    // Jeżeli w tym momencie kontener nie ma jeszcze docelowego rozmiaru —
+    // a nie ma go, dopóki nie ustali się układ strony i nie dojadą kroje —
+    // wszystkie węzły lądują w rogu, na kanwie 1900×1036 zajmując 120×68 px.
+    // Nic tego nie zgłasza: konsola jest czysta, kanwa ma poprawne wymiary.
+    //
+    // Ta sama klasa błędu co przy mapie (`ClusterMap`), i to samo lekarstwo:
+    // po każdej zmianie rozmiaru przeliczamy i dopasowujemy widok.
+    const obserwator = new ResizeObserver(() => {
+      cy.resize();
+      if (cy.elements().length > 0) cy.fit(undefined, 40);
+    });
+    obserwator.observe(container);
+
     cy.on("tap", "node", (event: EventObject) => {
       const id = event.target.id() as string;
       onSelect?.(id);
@@ -189,6 +203,9 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
       .then((graph) => {
         if (cancelled) return;
         cy.add(toElements(graph));
+        // `resize()` przed układem, bo dane przychodzą asynchronicznie i do
+        // tego czasu kontener zdążył urosnąć.
+        cy.resize();
         cy.layout(fcoseLayout(false)).run();
         setMeta(graph.meta);
       })
@@ -202,6 +219,7 @@ export function RelationshipGraph({ rootId, depth = 2, onSelect }: Props) {
 
     return () => {
       cancelled = true;
+      obserwator.disconnect();
       cy.destroy();
       cyRef.current = null;
     };
