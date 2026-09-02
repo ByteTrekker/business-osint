@@ -213,6 +213,25 @@ def ceidg_backfill_cmd() -> None:
     _echo_data_check(report)
 
 
+@app.command("import-partnership-names")
+def import_partnership_names_cmd(
+    limit: int = typer.Option(0, help="Ogranicz liczbę spółek (0 = wszystkie)"),
+) -> None:
+    """Nadaje spółkom cywilnym urzędowe nazwy z białej listy VAT.
+
+    CEIDG podaje dla spółki wyłącznie NIP i REGON, więc dotąd etykiety były
+    wyprowadzane z nazw wspólników. Ten przebieg je nadpisuje.
+    """
+    from business_osint.etl.partnership_names import NameStats, import_names
+
+    def show(stats: NameStats) -> None:
+        typer.echo(f"  sprawdzone: {stats.checked:,}  nazwane: {stats.named:,}\r", nl=False)
+
+    stats, report = asyncio.run(_with_data_check(import_names(limit=limit or None, progress=show)))
+    typer.echo(f"\nNazwy spolek: {stats.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(
