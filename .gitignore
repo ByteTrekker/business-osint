@@ -29,3 +29,4 @@ mutants/
 
 # Lokalna konfiguracja podglądu (ścieżki zależne od maszyny)
 .claude/
+.logs/
