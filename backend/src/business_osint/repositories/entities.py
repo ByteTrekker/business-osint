@@ -222,6 +222,36 @@ _BY_SURNAME = text("""
 
 # Filtr statusu obowiązuje także tutaj. Etap ostatni, który po cichu ignoruje
 # zawężenie wybrane przez użytkownika, jest gorszy niż brak wyników.
+#: Ustawienia zakładane **tylko** na czas etapu trigramowego.
+#:
+#: Dwa pokrętła, każde na inną ścieżkę — i to jest istotne, bo mierzone osobno
+#: dają zupełnie różne wyniki.
+#:
+#: `work_mem` działa **na zimnym cache'u**. Przy domyślnych 4 MB bitmapa indeksu
+#: GIN nie mieści się w pamięci i degraduje do postaci stratnej: zamiast
+#: wskazywać wiersze, wskazuje strony do ponownego przejrzenia. Dla „kowlaski
+#: jan" to 5 275 905 wierszy powtórnie sprawdzanych i 8,0 s; przy 64 MB — 1,6 s.
+#: Powyżej 64 MB nic już nie zyskuje. **Na ciepłym cache'u nie daje nic** —
+#: zmierzone: 373 ms z nim i bez niego. Zostaje, bo pierwsze zapytanie po
+#: restarcie i praca pod presją pamięci to nie są przypadki teoretyczne.
+#:
+#: `similarity_threshold` działa **na ciepłym**, i to on daje właściwy zysk:
+#: 373 → 121 ms. Domyślne 0,3 dopuszcza 41 kandydatów dla frazy z benchmarku
+#: i pół miliona dla dwuwyrazowego nazwiska.
+#:
+#: Progu **nie podnosimy wyżej niż 0,4**, bo 0,5 zaczyna gubić trafienia:
+#: „pkn orlen" spada z pięciu wyników do dwóch, a to jest dokładnie ten
+#: przypadek, dla którego ten etap w ogóle istnieje. Przy 0,4 sprawdzone
+#: „pkn orlen", „skanska", „kowlaski jan", „zaklad uslugowy" i „orlem spolka"
+#: zwracają te same najlepsze trafienia co przy 0,3.
+#:
+#: `SET LOCAL` obowiązuje do końca transakcji, więc nie wycieka na inne
+#: zapytania w tej samej sesji ani na inne połączenia.
+_USTAWIENIA_TRIGRAMU = (
+    text("SET LOCAL work_mem = '64MB'"),
+    text("SET LOCAL pg_trgm.similarity_threshold = 0.4"),
+)
+
 _BY_TRIGRAM = text("""
     SELECT e.id, e.entity_type, e.display_name, e.degree,
            (0.30 + similarity(e.normalized_name, :normalized) * 0.09)::float8 AS score
@@ -367,6 +397,8 @@ class EntityRepository:
         # w bazie, więc dawało pustą listę mimo że ORLEN S.A. tam jest. Koszt
         # 140–250 ms płacimy wyłącznie za wynik, który i tak byłby pusty.
         if (fuzzy or not rows) and len(rows) < needed and len(normalized) >= 3:
+            for ustawienie in _USTAWIENIA_TRIGRAMU:
+                await self._session.execute(ustawienie)
             take(
                 await self._fetch(
                     _BY_TRIGRAM,
