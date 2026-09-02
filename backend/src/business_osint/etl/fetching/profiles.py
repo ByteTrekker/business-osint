@@ -113,6 +113,27 @@ PROFILES: dict[SourceKind, SourceProfile] = {
             "jest wyłącznie w pojedynczym wpisie `/firma`."
         ),
     ),
+    SourceKind.GUGIK: SourceProfile(
+        kind=SourceKind.GUGIK,
+        name="GUGiK UUG",
+        access=AccessMode.PER_ENTITY,
+        incremental=IncrementalMode.FULL_ONLY,
+        # Usługa nie publikuje limitu i zmierzone tempo sekwencyjne to 2,1
+        # zapytania na sekundę — ogranicza je opóźnienie sieci, nie serwer.
+        # Zostajemy przy jednym na sekundę, bo źródło jest odpytywane
+        # **po jednym adresie**, a wtedy obowiązuje reguła z tego pliku:
+        # ogranicza nas uprzejmość, nie przepustowość. Brak podanego limitu
+        # nie jest zgodą na dociskanie.
+        rate_per_second=1.0,
+        concurrency=1,
+        retry=_CAREFUL,
+        estimated_objects=475_707,
+        estimated_size_mb=200,
+        notes=(
+            "Geokoder oparty o PRG. Trafia tam, gdzie dopasowanie po napisie "
+            "zawiodło. Zwraca też TERYT, SIMC i ULIC."
+        ),
+    ),
     SourceKind.CRBR: SourceProfile(
         kind=SourceKind.CRBR,
         name="CRBR",

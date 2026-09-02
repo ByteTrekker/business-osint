@@ -232,6 +232,34 @@ def import_partnership_names_cmd(
     _echo_data_check(report)
 
 
+@app.command("geocode-missing")
+def geocode_missing_cmd(
+    limit: int = typer.Option(0, help="Ogranicz liczbę adresów (0 = wszystkie)"),
+    after: str = typer.Option("", help="Wznów od identyfikatora większego niż podany"),
+) -> None:
+    """Geokoduje adresy, których dopasowanie do PRG nie objęło.
+
+    475 707 adresów nie znalazło punktu, bo napis nie pasował znak w znak.
+    UUG odpytuje te same dane po adresie, więc radzi sobie tam, gdzie
+    porównanie napisów zawiodło.
+    """
+    from business_osint.etl.uug_pipeline import UugStats, geocode_missing
+
+    def show(stats: UugStats) -> None:
+        if stats.checked % 100 == 0:
+            typer.echo(
+                f"  sprawdzone: {stats.checked:,}  zlokalizowane: {stats.located:,}"
+                f"  odrzucone: {stats.rejected_voivodeship:,}\r",
+                nl=False,
+            )
+
+    stats, report = asyncio.run(
+        _with_data_check(geocode_missing(limit=limit or None, after=after or None, progress=show))
+    )
+    typer.echo(f"\nUUG: {stats.as_dict()}")
+    _echo_data_check(report)
+
+
 @app.command("check-data")
 def check_data(
     deep: bool = typer.Option(

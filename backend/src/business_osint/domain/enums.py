@@ -72,6 +72,7 @@ class SourceKind(StrEnum):
     BZP = "bzp"  # Biuletyn Zamówień Publicznych
     EU_FUNDS = "eu_funds"
     GLEIF = "gleif"  # globalny rejestr LEI, dane na licencji CC0
+    GUGIK = "gugik"  # Państwowy Rejestr Granic: punkty adresowe i geokoder UUG
     MANUAL = "manual"
     DERIVED = "derived"  # wynik naszego przetwarzania
 
