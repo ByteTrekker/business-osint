@@ -49,7 +49,15 @@ const NODE_COLORS: Record<string, string> = {
   other: "#64748b",
 };
 
+// Musi pokrywać **cały** `RelationshipType` z backendu. Brak wpisu nie psuje
+// rysowania — krawędź dostaje wtedy surową nazwę typu, więc obok „wspólnik"
+// pojawia się „sole_proprietor_of". Brakowało akurat najczęstszego typu
+// w bazie: jednoosobowych działalności jest 3,55 mln.
 const EDGE_LABELS: Record<string, string> = {
+  sole_proprietor_of: "właściciel",
+  contractor_of: "wykonawca",
+  represents: "reprezentuje",
+  successor_of: "następca prawny",
   board_member_of: "zarząd",
   supervisory_member_of: "rada nadzorcza",
   shareholder_of: "udziałowiec",

@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
+import pytest
+
 from business_osint.domain.registry_values import (
     current_value,
     parse_registry_amount,
@@ -76,3 +78,39 @@ def test_unparsable_amount_gives_none_instead_of_raising() -> None:
     """Śmieć w kwocie ma dać `None`, a nie wywrócić import."""
     assert parse_registry_amount("brak danych") is None
     assert parse_registry_amount(None) is None
+
+
+def test_frontend_labels_cover_every_relationship_type() -> None:
+    """Każdy typ krawędzi ma polską etykietę w interfejsie.
+
+    Enum żyje w Pythonie, a słownik etykiet w TypeScripcie — nic ich ze sobą
+    nie wiąże, więc dodanie typu po stronie backendu nie zapala żadnej lampki.
+    Brak wpisu nie psuje rysowania: krawędź dostaje wtedy surową nazwę typu
+    i obok „wspólnik" pojawia się „sole_proprietor_of". Tak właśnie było
+    z najczęstszym typem w bazie.
+    """
+    import re
+    from pathlib import Path
+
+    from business_osint.domain.enums import RelationshipType
+
+    komponent = (
+        Path(__file__).resolve().parents[3]
+        / "frontend"
+        / "src"
+        / "components"
+        / "RelationshipGraph.tsx"
+    )
+    if not komponent.exists():
+        # Piaskownica testów mutacyjnych kopiuje wyłącznie `backend/`, więc
+        # frontendu tam nie ma. Pomijamy **głośno**: cicho pominięty test
+        # kontraktu jest gorszy niż jego brak, bo wygląda jak zielony.
+        pytest.skip(f"brak komponentu frontendu: {komponent}")
+
+    tresc = komponent.read_text(encoding="utf-8")
+    slownik = tresc[tresc.index("const EDGE_LABELS") :]
+    slownik = slownik[: slownik.index("};")]
+    zdefiniowane = set(re.findall(r"^\s*([a-z_]+):", slownik, re.M))
+
+    brakujace = sorted(t.value for t in RelationshipType if t.value not in zdefiniowane)
+    assert not brakujace, f"typy bez etykiety w interfejsie: {brakujace}"
