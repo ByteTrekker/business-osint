@@ -122,6 +122,7 @@ def parse_krs_document(payload: dict[str, Any]) -> ParsedDocument:
 
     _parse_addresses(root, dates, company, result)
     _parse_corporate_partners(root, dates, company, result)
+    _parse_przejecia(root, dates, company, result)
     return result
 
 
@@ -280,3 +281,106 @@ def _parse_corporate_partners(
                 locator=f"/odpis/dane/dzial1/wspolnicySpzoo/{index}",
             )
         )
+
+
+def _wersja_biezaca(pole: Any, klucz: str) -> Any:
+    """Wartość pola z wersji obowiązującej albo z ostatniej, jeśli żadna nie trwa.
+
+    Odpis pełny opakowuje **każde** pole w listę wersji, także tam, gdzie
+    wartość nigdy się nie zmieniła. Bez tego kroku dostajemy listę zamiast
+    napisu i wszystko dalej milcząco nie pasuje.
+    """
+    wersje = _versions(pole)
+    if not wersje:
+        return None
+    biezaca = next((w for w in wersje if _is_current(w)), wersje[-1])
+    return biezaca.get(klucz)
+
+
+def _parse_przejecia(
+    root: dict[str, Any], dates: dict[int, dt.date], company: ParsedEntity, out: ParsedDocument
+) -> None:
+    """Spółki przejęte — krawędź `successor_of` od przejmującego do przejmowanej.
+
+    Dział 6 opisuje połączenie **prozą**, w polu
+    `opisPolaczeniaPodzialuPrzeksztalcenia`, i gdyby to było jedyne, co mamy,
+    trzeba by parsować tekst prawniczy i zgadywać, o którą spółkę chodzi.
+    Ale `podmiotyPrzejmowane` niesie **twarde identyfikatory**: numer KRS
+    i REGON spółki przejmowanej. Dlatego krawędź powstaje bez dopasowywania
+    po nazwie, czyli bez naruszania niezmiennika N4.
+
+    Kierunek czyta się jak zdanie: PRZEJMUJĄCY --successor_of--> PRZEJMOWANA.
+    """
+    pozycje = (root.get("dzial6") or {}).get("polaczeniePodzialPrzeksztalcenie") or []
+    for index, pozycja in enumerate(pozycje):
+        if not isinstance(pozycja, dict):
+            continue
+        okolicznosci = _wersja_biezaca(
+            pozycja.get("okreslenieOkolicznosci"), "okreslenieOkolicznosci"
+        )
+        opis = _wersja_biezaca(
+            pozycja.get("opisPolaczeniaPodzialuPrzeksztalcenia"),
+            "opisPolaczeniaPodzialuPrzeksztalcenia",
+        )
+        for kolejny, przejmowana in enumerate(pozycja.get("podmiotyPrzejmowane") or []):
+            if not isinstance(przejmowana, dict):
+                continue
+            nazwa = _wersja_biezaca(przejmowana.get("nazwa"), "nazwa")
+            if not isinstance(nazwa, str) or not nazwa:
+                continue
+            # Nazwa bywa sklejona z formą prawną po przecinku, a myślniki
+            # to wypełniacz rejestru — obie rzeczy tylko zaśmiecają etykietę.
+            nazwa = nazwa.split(",")[0].strip().strip("-").strip()
+
+            krs = _wersja_biezaca(przejmowana.get("krs"), "krs")
+            if not krs:
+                rejestr = _wersja_biezaca(przejmowana.get("krajNazwaRejestru"), "krajNazwaRejestru")
+                numer = _wersja_biezaca(
+                    przejmowana.get("numerWRejestrzeAlboEwidencji"), "numerWRejestrzeAlboEwidencji"
+                )
+                # Numer w rejestrze jest numerem KRS **tylko** wtedy, gdy tym
+                # rejestrem jest KRS. Dla wpisów sprzed 2001 roku bywa to RHB
+                # i wzięcie go za KRS byłoby przypisaniem cudzego numeru.
+                if numer and isinstance(rejestr, str) and "KRAJOWY REJESTR" in rejestr.upper():
+                    krs = numer
+            regon = _wersja_biezaca(przejmowana.get("identyfikator"), "regon")
+
+            identifiers: dict[IdentifierScheme, str] = {}
+            if krs:
+                identifiers[IdentifierScheme.KRS] = str(krs)
+            if regon:
+                identifiers[IdentifierScheme.REGON] = str(regon)
+            if not identifiers:
+                # Bez twardego identyfikatora zostaje sama nazwa, a ta nie
+                # wystarcza, żeby powiedzieć, którą spółkę przejęto.
+                continue
+
+            key = f"company:{krs}" if krs else f"company:regon:{regon}"
+            out.entities.append(
+                ParsedEntity(
+                    entity_type=EntityType.COMPANY,
+                    display_name=nazwa,
+                    normalized_name=normalize_company_name(nazwa),
+                    identifiers=identifiers,
+                    local_key=key,
+                )
+            )
+            valid_from, _ = _period(
+                _versions(przejmowana.get("nazwa"))[0] if przejmowana.get("nazwa") else {}, dates
+            )
+            out.relationships.append(
+                ParsedRelationship(
+                    source_key=company.local_key,
+                    target_key=key,
+                    relationship_type=RelationshipType.SUCCESSOR_OF,
+                    role=okolicznosci if isinstance(okolicznosci, str) else None,
+                    # Przejęcie jest zdarzeniem: obowiązuje od wpisu i nie kończy się.
+                    valid_from=valid_from,
+                    valid_to=None,
+                    attributes={"opis": opis[:500] if isinstance(opis, str) else None},
+                    locator=(
+                        f"/odpis/dane/dzial6/polaczeniePodzialPrzeksztalcenie/"
+                        f"{index}/podmiotyPrzejmowane/{kolejny}"
+                    ),
+                )
+            )

@@ -36,8 +36,7 @@ ani jedna encja osoby**.
 
 | co | ile w tym odpisie | wartość dla grafu |
 |---|---|---|
-| **`naglowekP.wpis`** — numer, opis i data każdego wpisu | **219 wpisów** | oś czasu całego rejestru |
-| **`nrWpisuWprow` / `nrWpisuWykr`** przy **każdym** polu | wszędzie | `valid_from` / `valid_to` dla każdego faktu |
+| ~~`naglowekP.wpis` i `nrWpisuWprow/Wykr`~~ | — | **mapper już to ma** (`entry_dates`, `_period`) — patrz korekta niżej |
 | `sposobPowstaniaPodmiotu.podmioty` — podmioty tworzące, z NIP-em | 2 | **krawędź spółka→spółka** |
 | `dzial6.polaczeniePodzialPrzeksztalcenie.podmiotyPrzejmowane` | 3 | **`successor_of`** — typ jest w enumie i **nieużywany** |
 | `jednostkiTerenoweOddzialy` — oddziały z adresami | 11 | kolejne węzły adresowe |
@@ -49,9 +48,14 @@ ani jedna encja osoby**.
 | `daneOWczesniejszejRejestracji` — numer w RHB | 1 | ciągłość sprzed KRS |
 | `adresPocztyElektronicznej`, `adresStronyInternetowej` | 3 + 1 | kontakt |
 
-**To jest najważniejsza pozycja w całym dokumencie.** Rejestr podaje pełną
-historię czasową za darmo, w dokumentach, które i tak pobieramy — a my
-zapisujemy z nich stan bieżący.
+> **Korekta z 2026-09-02.** Pierwsza wersja tego dokumentu twierdziła, że
+> nie bierzemy osi czasu. To była nieprecyzyjna lektura kodu: `krs_mapper`
+> **ma** `entry_dates()` i `_period()`, i przelicza numery wpisów na daty —
+> krawędź adresowa ORLEN-u ma `valid_from = 2001-07-19`. Mechanizm istnieje.
+>
+> Prawdziwa luka jest węższa i inna: z odpisu 432 KB, mającego 219 wpisów,
+> parsery wyciągały **2 encje i 1 krawędź**. Brakowało nie osi czasu, tylko
+> parserów kolejnych sekcji. Przekształcenia dopisane — reszta poniżej stoi.
 
 **Historia zmian:** tak, kompletna. **Bulk:** nie ma, jedno zapytanie na podmiot.
 **Przyrostowo:** brak wsparcia, porównanie po sumie kontrolnej treści.

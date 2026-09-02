@@ -178,3 +178,82 @@ def test_gleif_without_relationship_period_is_treated_as_current() -> None:
     assert parsed is not None
     assert parsed.valid_from is None
     assert parsed.valid_to is None
+
+
+class TestPrzejeciaSpolek:
+    """Dział 6: połączenia i przejęcia jako krawędzie `successor_of`."""
+
+    def test_acquisitions_become_successor_edges(self) -> None:
+        wynik = parse_krs_document(ODPIS)
+
+        przejecia = [
+            r for r in wynik.relationships if r.relationship_type is RelationshipType.SUCCESSOR_OF
+        ]
+        assert przejecia, "odpis z działem 6 musi dać krawędzie przejęcia"
+        # Kierunek czyta się jak zdanie: PRZEJMUJĄCY --successor_of--> PRZEJMOWANA.
+        for krawedz in przejecia:
+            assert krawedz.source_key.startswith("company:")
+            assert krawedz.target_key != krawedz.source_key
+
+    def test_acquired_company_is_identified_by_krs_not_by_name(self) -> None:
+        """Dział 6 opisuje połączenie prozą, ale `podmiotyPrzejmowane` niesie
+        twarde identyfikatory — i tylko na nich wolno budować krawędź (N4)."""
+        wynik = parse_krs_document(ODPIS)
+
+        cele = {
+            r.target_key
+            for r in wynik.relationships
+            if r.relationship_type is RelationshipType.SUCCESSOR_OF
+        }
+        przejete = [e for e in wynik.entities if e.local_key in cele]
+        assert przejete
+        for encja in przejete:
+            assert encja.identifiers, f"{encja.display_name} bez identyfikatora"
+
+    def test_acquisition_carries_the_date_of_its_register_entry(self) -> None:
+        wynik = parse_krs_document(ODPIS)
+
+        przejecia = [
+            r for r in wynik.relationships if r.relationship_type is RelationshipType.SUCCESSOR_OF
+        ]
+        assert all(r.valid_from is not None for r in przejecia)
+        # Przejęcie jest zdarzeniem, nie stanem, który się kończy.
+        assert all(r.valid_to is None for r in przejecia)
+
+    def test_a_pre_krs_register_number_is_not_taken_for_a_krs_number(self) -> None:
+        """Wpisy sprzed 2001 wskazują rejestr RHB. Wzięcie jego numeru za KRS
+        przypisałoby spółce cudzy identyfikator."""
+        wynik = parse_krs_document(
+            {
+                "odpis": {
+                    "naglowekP": {"numerKRS": "0000000001", "wpis": []},
+                    "dane": {
+                        "dzial1": {"danePodmiotu": {"nazwa": [{"nazwa": "TESTOWA S.A."}]}},
+                        "dzial6": {
+                            "polaczeniePodzialPrzeksztalcenie": [
+                                {
+                                    "podmiotyPrzejmowane": [
+                                        {
+                                            "nazwa": [{"nazwa": "STARA SPÓŁKA"}],
+                                            "krajNazwaRejestru": [
+                                                {"krajNazwaRejestru": "------,RHB"}
+                                            ],
+                                            "numerWRejestrzeAlboEwidencji": [
+                                                {"numerWRejestrzeAlboEwidencji": "780"}
+                                            ],
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                    },
+                }
+            }
+        )
+
+        klucze = [e.local_key for e in wynik.entities]
+        assert "company:780" not in klucze
+        # Bez twardego identyfikatora krawędź w ogóle nie powstaje.
+        assert not [
+            r for r in wynik.relationships if r.relationship_type is RelationshipType.SUCCESSOR_OF
+        ]
